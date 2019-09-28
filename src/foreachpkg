@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+# see https://stackoverflow.com/a/246128/5354298
+get_script_dir() { echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; }
+SCRIPT_DIR=$(get_script_dir)
+cleanup_complete=0
+cleanup() {
+  echo 'Cleaning up...'
+  cd "$SCRIPT_DIR" || return
+  cleanup_complete=1
+}
+# Based on http://linuxcommand.org/lc3_wss0140.php
+# and https://codeinthehole.com/tips/bash-error-reporting/
+error_exit() {
+  #	----------------------------------------------------------------
+  #	Function for exit due to fatal program error
+  #		Accepts 1 argument:
+  #			string containing descriptive error message
+  #	----------------------------------------------------------------
+
+  read -r line file <<<"$(caller)"
+  echo "" 1>&2
+  echo "ERROR: file $file, line $line" 1>&2
+  if [ ! "$1" ]; then
+    sed "${line}q;d" "$SCRIPT_DIR/$file" 1>&2
+  else
+    echo "${1:-"Unknown Error"}" 1>&2
+  fi
+  echo "" 1>&2
+
+  # TODO: should error_exit call cleanup?
+  #       The EXIT trap already calls cleanup, so
+  #       calling it here means calling it twice.
+  if [ ! $cleanup_complete ]; then
+    cleanup
+  fi
+  exit 1
+}
+
+if [[ -z "$*" ]]; then
+  echo "Command required: $0 <cmd>"
+  exit 1
+fi
+
+for name in $(jq -r 'map(.name) | @sh' "./local-packages.json"); do
+  cd "$SCRIPT_DIR" || exit 1
+  echo ""
+  echo "***********************************"
+  echo "$name"
+  echo "***********************************"
+  (eval "cd ./packages/node_modules/$name || exit 1" && eval "$@") || break
+done
+
+#jq -r '.[] | "\(.name)"' \
+#  "./local-packages.json" |
+#  while read -r name; do
+#    cd "$SCRIPT_DIR" || exit 1
+#    echo ""
+#    echo "***********************************"
+#    echo "$name"
+#    echo "***********************************"
+#    #(cd ./packages/node_modules/"$name" || exit 1; eval "$@")
+#    cd ./packages/node_modules/"$name" || exit 1
+#    eval "$@"
+#    echo "done"
+#  done
+#
+#echo "done outside"
+#
+#cd "$SCRIPT_DIR" || exit 1

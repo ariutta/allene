@@ -1,0 +1,5 @@
+.direnv/
+.envrc
+.nixpkgs-version.json
+node_modules/
+peer-dependencies-by-dependent.json

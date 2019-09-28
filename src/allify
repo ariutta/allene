@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+if ! nix-env --version >/dev/null 2>&1; then
+  echo "Please install Nix: https://nixos.org/nix/download.html" >/dev/stderr
+fi
+
+if [ ! -d mynixpkgs ]; then
+  git remote add mynixpkgs https://github.com/ariutta/mynixpkgs.git
+  git subtree add --prefix mynixpkgs mynixpkgs master --squash
+  git subtree pull --prefix mynixpkgs mynixpkgs master --squash
+fi
+
+if ! jq --version >/dev/null 2>&1; then
+  nix-shell
+fi
+
+if [ ! -f local-packages.json ]; then
+  if [ -d packages/node_modules ]; then
+    echo "Creating local-packages.json based on contents of packages/node_modules"
+    package_json_paths=$(ls -1 packages/node_modules/\@*/*/package.json packages/node_modules/*/package.json)
+    cat $package_json_paths |
+      jq --slurp 'map({name: .name, repository: .repository.url})' >/local-packages.json
+  else
+    echo "Create a local-packages.json file." >/dev/stderr
+    echo "Order dependancies before dependents." >/dev/stderr
+    echo "Example:" >/dev/stderr
+    echo '[{' >/dev/stderr
+    echo '  "name": "svg-pan-zoom",' >/dev/stderr
+    echo '  "repository": "git@github.com:ariutta/svg-pan-zoom"' >/dev/stderr
+    echo '}]' >/dev/stderr
+    exit 1
+  fi
+fi
+
+if [ ! -d packages/node_modules ]; then
+  # Make directories for the local packages
+  jq -r '.[] | "mkdir -p ./packages/node_modules/\(.name)"' "./local-packages.json" |
+    while read -r cmd; do
+      $cmd
+    done
+
+  # Clone the local packages
+  jq -r '.[] | "git clone \(.repository) ./packages/node_modules/\(.name)"' "./local-packages.json" |
+    while read -r cmd; do
+      $cmd
+    done
+fi
+
+./collect-dependencies
+npm install
+./link-bins
+./foreachpkg npm run build

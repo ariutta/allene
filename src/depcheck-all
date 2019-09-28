@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+
+# see https://stackoverflow.com/a/246128/5354298
+get_script_dir() { echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; }
+SCRIPT_DIR=$(get_script_dir)
+cleanup_complete=0
+cleanup() {
+  echo 'Cleaning up...'
+  cd "$SCRIPT_DIR" || return
+  cleanup_complete=1
+}
+# Based on http://linuxcommand.org/lc3_wss0140.php
+# and https://codeinthehole.com/tips/bash-error-reporting/
+error_exit() {
+  #	----------------------------------------------------------------
+  #	Function for exit due to fatal program error
+  #		Accepts 1 argument:
+  #			string containing descriptive error message
+  #	----------------------------------------------------------------
+
+  read -r line file <<<"$(caller)"
+  echo "" 1>&2
+  echo "ERROR: file $file, line $line" 1>&2
+  if [ ! "$1" ]; then
+    sed "${line}q;d" "$SCRIPT_DIR/$file" 1>&2
+  else
+    echo "${1:-"Unknown Error"}" 1>&2
+  fi
+  echo "" 1>&2
+
+  # TODO: should error_exit call cleanup?
+  #       The EXIT trap already calls cleanup, so
+  #       calling it here means calling it twice.
+  if [ ! $cleanup_complete ]; then
+    cleanup
+  fi
+  exit 1
+}
+trap error_exit ERR
+trap cleanup EXIT INT QUIT TERM
+
+shopt -s globstar
+
+names=$(jq -r '.[] | .name' local-packages.json)
+
+PEER_DEPENDENCIES_BY_DEPENDENT_F="$SCRIPT_DIR"/peer-dependencies-by-dependent.json
+PEER_DEPENDENTS_BY_DEPENDENCY_F="$SCRIPT_DIR"/peer-dependents-by-dependency.json
+if [ ! -e "$PEER_DEPENDENCIES_BY_DEPENDENT_F" ]; then
+  echo "Getting list of peer dependency relationships. Caching in $PEER_DEPENDENCIES_BY_DEPENDENT_F."
+  for pkg in $(jq -r '.dependencies | to_entries | map("\(.key)@\(.value)") | @sh' package.json); do
+    eval "npm info --json $pkg" | jq 'select(.peerDependencies) | {(.name): .peerDependencies | keys}' \
+      >>"$PEER_DEPENDENTS_BY_DEPENDENCY_F" || break;
+  done
+  jq -s 'reduce .[] as $item({}; . * $item) | to_entries | map(select(.value | length > 0)) | map(.key as $mykey | reduce .value[] as $myvalue ({}; . * {($myvalue): [$mykey]})) | map(to_entries) | reduce .[] as $item ([]; . + $item) | reduce .[] as $item ({}; .[$item["key"]] += $item["value"])' \
+    "$PEER_DEPENDENTS_BY_DEPENDENCY_F" > "$PEER_DEPENDENCIES_BY_DEPENDENT_F"
+  rm "$PEER_DEPENDENTS_BY_DEPENDENCY_F"
+fi
+
+always_ok_pkgs=('typescript' '@types/node' 'eslint-config-prettier' 'babel-preset-env' 'babel-preset-react')
+
+for pkg in $names; do
+  child_dir="./packages/node_modules/$pkg"
+
+  echo "**********************************"
+  echo "* $pkg"
+  echo "**********************************"
+
+  cd "$child_dir" || error_exit "Error: 'cd \"$child_dir\"' failed."
+  for dep_quoted in $(jq -r '(.dependencies // {}) + (.devDependencies // {}) | keys | @sh' package.json); do
+    dep=$(eval "echo $dep_quoted")
+    if [[ "${always_ok_pkgs[*]}" =~ ${dep} ]]; then
+      true
+      #echo "$dep is ok"
+    elif rg -q "$dep" ./{src,bin,test,tests}/**/*.{js,jsx,ts,tsx} 2>/dev/null; then
+      true
+    elif rg -q "$dep" ./bin 2>/dev/null; then
+      true
+      #echo "$dep is found in bin"
+    elif rg -q "$dep" ./*.{js,jsx,ts,tsx} 2>/dev/null; then
+      true
+      #echo "$dep is found at top-level"
+    else
+      typeless=${dep//@types\//}
+      if [ "$typeless" != "$dep" ] && jq -e --arg typeless "$typeless" '(.dependencies // {}) + (.devDependencies // {}) | has($typeless)' package.json >/dev/null; then
+        true
+        #echo "$dep is required for $typeless"
+      elif jq -e --arg dep "$dep" '.scripts | map(values | test(".*?\($dep).*")) | any' package.json >/dev/null; then
+        true
+        #echo "$dep is found in scripts"
+      else
+        peer_dependencies=$(comm -12  <(jq -r '(.dependencies // {}) + (.devDependencies // {}) | keys | .[]' package.json | sort -u) <(jq -r '.webpack | .[]' "$PEER_DEPENDENCIES_BY_DEPENDENT_F" | sort -u))
+        if [ -n "$peer_dependencies" ]; then
+          true
+          # echo "$dep needed as peer dependency for $peer_dependencies" | paste -sd "," -
+        else
+          for bin in $(npm info --json "$dep" bin | jq -r 'keys | .[]'); do
+            if jq -r '.scripts' package.json | grep -q "$bin"; then
+              #echo "$dep appears needed for CLI command $bin"
+              continue 2
+            elif [[ $(rg -c "$bin" package.json) -gt 1 ]]; then
+              echo "Is $dep unused or is it needed for CLI command $bin?"
+              rg "$bin" ./package.json
+              continue 2
+            elif rg -q "$bin" ./{bin,test,tests} 2>/dev/null; then
+              echo "Is $dep unused or is it needed for CLI command $bin?"
+              #(rg "$bin" ./{bin,test,tests} 2>/dev/null || exit 0)
+              rg -u --glob '!{package.json,package-lock.json,*.ts,*.tsx,*.js,*.jsx,*.md}' "$bin" ./
+              continue 2
+            fi
+          done
+          echo "$dep may be unused. Can it be uninstalled?"
+          if rg -qu --glob '!{package-lock.json}' "$dep" ./; then
+            rg -u --glob '!{package-lock.json}' "$dep" ./
+          fi
+        fi
+      fi
+    fi
+  done
+
+  #depcheck is very slow, and it seems to be doing something wrong w/ Nix.
+  #depcheck --json --ignore-dir "./packages/node_modules/$pkg/lib" "./packages/node_modules/$pkg"
+
+  cd "$SCRIPT_DIR" || error_exit "Error: 'cd \"$SCRIPT_DIR\"' failed."
+done

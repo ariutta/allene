@@ -1,0 +1,193 @@
+#!/usr/bin/env bash
+
+# see https://stackoverflow.com/a/246128/5354298
+get_script_dir() { echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; }
+SCRIPT_DIR=$(get_script_dir)
+cleanup_complete=0
+cleanup() {
+  echo 'Cleaning up...'
+  cd "$SCRIPT_DIR" || return
+  cleanup_complete=1
+}
+# Based on http://linuxcommand.org/lc3_wss0140.php
+# and https://codeinthehole.com/tips/bash-error-reporting/
+error_exit() {
+  #	----------------------------------------------------------------
+  #	Function for exit due to fatal program error
+  #		Accepts 1 argument:
+  #			string containing descriptive error message
+  #	----------------------------------------------------------------
+
+  read -r line file <<<"$(caller)"
+  echo "" 1>&2
+  echo "ERROR: file $file, line $line" 1>&2
+  if [ ! "$1" ]; then
+    sed "${line}q;d" "$SCRIPT_DIR/$file" 1>&2
+  else
+    echo "${1:-"Unknown Error"}" 1>&2
+  fi
+  echo "" 1>&2
+
+  # TODO: should error_exit call cleanup?
+  #       The EXIT trap already calls cleanup, so
+  #       calling it here means calling it twice.
+  if [ ! $cleanup_complete ]; then
+    cleanup
+  fi
+  exit 1
+}
+trap error_exit ERR
+trap cleanup EXIT INT QUIT TERM
+
+# PACKAGE_LOCK_PATH="./package-lock.json"
+
+#bash ./collect-dependencies
+touch ./package-lock.json
+rm ./package-lock.json
+npm install
+npm update
+#if [ ! -e "$PACKAGE_LOCK_PATH" ]; then
+#  echo "Creating a package-lock.json"
+#  npm i --package-lock-only
+#fi
+npm audit fix
+
+package_json_paths=$(ls -1 packages/node_modules/\@*/*/package.json packages/node_modules/*/package.json)
+
+names=$(jq -r '.[] | .name' local-packages.json)
+
+package_json_path="./package.json"
+lockfile_path="./package-lock.json"
+
+#third_party_dependencies=$(jq '(.dependencies // {}) | to_entries | reduce .[] as $item ({}; .[$item.key] |= $item.value.version)' $lockfile_path)
+third_party_dependencies=$(jq '(.dependencies // {})' $package_json_path)
+
+#for pkg in $names; do
+#	echo "resetting package.json for $pkg..."
+#
+#	child_dir="./packages/node_modules/$pkg"
+#
+#	cd "$child_dir" || error_exit "Error: 'cd \"$child_dir\"' failed."
+#	if [ ! -f ./package.json ]; then
+#	  cp ./package.json ./package-lkg.json
+#	fi
+#	git checkout package.json
+#	cd "$SCRIPT_DIR" || error_exit "Error: 'cd \"$SCRIPT_DIR\"' failed."
+#done
+
+# alle_dependencies: all packages, both local and third-party, for this project.
+# Includes the version number of each package. For local packages, uses version
+# number specified locally in packages/node_modules/<pkg>/package.json.
+alle_dependencies=$(jq --slurp \
+  --argjson third_party_dependencies "$third_party_dependencies" \
+  'reduce .[] as $item ($third_party_dependencies; .[$item.name] |= $item.version)' \
+  $package_json_paths)
+
+QUERY=$(
+  (sed 's/^\s*//g' | tr -d '\012') <<END
+(.[\$dep_key] // {}) |
+to_entries |
+map({
+  "key": .key,
+  "value": (
+    if (\$alle_dependencies[.key] != null) 
+    then \$alle_dependencies[.key] 
+    else .value 
+    end
+  )
+}) |
+from_entries
+END
+)
+
+for pkg in $names; do
+  cd "$SCRIPT_DIR" || error_exit "Error: 'cd \"$SCRIPT_DIR\"' failed."
+
+  echo "**********************************"
+  echo "* $pkg"
+  echo "**********************************"
+
+  echo "$pkg: updating package.json"
+
+  has_dependencies=$(jq 'has("dependencies")' ./packages/node_modules/"$pkg"/package.json)
+  has_dev_dependencies=$(jq 'has("devDependencies")' ./packages/node_modules/"$pkg"/package.json)
+
+  child_package_json_path="./packages/node_modules/$pkg/package.json"
+  child_package_json_tmp_path="./packages/node_modules/$pkg/package_tmp.json"
+  updated_ds_path="./packages/node_modules/$pkg/updated_ds.json"
+
+  latest_published_version=$(npm search "$pkg" -json | jq '.[0].version')
+  package_json_version=$(jq '.version' "$child_package_json_path")
+  if [ "$latest_published_version" != "$package_json_version" ]; then
+    error_exit "Latest published version: $latest_published_version vs. package.json version: $package_json_version"
+    # TODO: does this handle the case like cget/cxsd?
+    #       cget has cxsd as a dev dep, but
+    #       cxsd has cget as a dependency.
+    #       We basically always just want to use the second-to-latest version of
+    #       cxsd as the dev dependency for cget in this case.
+  fi
+
+  if [ "$has_dependencies" != 'true' ] && [ "$has_dev_dependencies" != 'true' ]; then
+    echo "$pkg has no deps."
+    continue
+  fi
+
+  if [ "$has_dependencies" == 'true' ]; then
+    jq --arg dep_key 'dependencies' --argjson alle_dependencies "$alle_dependencies" \
+      "$QUERY" \
+      "$child_package_json_path" >"$updated_ds_path"
+
+    jq --slurpfile updated_ds "$updated_ds_path" \
+      '(.dependencies // {}) |= $updated_ds[0]' "$child_package_json_path" >"$child_package_json_tmp_path"
+
+    mv "$child_package_json_tmp_path" "$child_package_json_path"
+    rm "$updated_ds_path"
+  fi
+
+  if [ "$has_dev_dependencies" == 'true' ]; then
+    jq --arg dep_key 'devDependencies' --argjson alle_dependencies "$alle_dependencies" \
+      "$QUERY" \
+      "$child_package_json_path" >"$updated_ds_path"
+
+    jq --slurpfile updated_ds "$updated_ds_path" \
+      '(.devDependencies // {}) |= $updated_ds[0]' "$child_package_json_path" >"$child_package_json_tmp_path"
+
+    mv "$child_package_json_tmp_path" "$child_package_json_path"
+    rm "$updated_ds_path"
+  fi
+
+  echo "$pkg: updating package-lock.json"
+
+  child_dir="./packages/node_modules/$pkg"
+
+  cd "$child_dir" || error_exit "Error: 'cd \"$child_dir\"' failed."
+
+  # TODO: instead of cd'ing into the child directory,
+  # could/should we use npm explore? Example:
+  #   npm explore kaavio -- npm run build
+
+  #git status -s
+
+  if [ -f ./package-lock.json ]; then
+    mv ./package-lock.json ./package-lock-lkg.json
+  fi
+  touch ./package-lock-lkg.json
+  npm install --package-lock-only
+  rm ./package-lock-lkg.json
+
+  echo "$pkg: building"
+  npm run --silent build || error_exit \
+    "Error: 'npm run --silent build' failed for $pkg. Remove '--silent' to debug."
+
+  echo "$pkg: testing"
+  npm run --silent test || error_exit \
+    "Error: 'npm run --silent test' failed for $pkg. Remove '--silent' to debug."
+
+  cd "$SCRIPT_DIR" || error_exit "Error: 'cd \"$SCRIPT_DIR\"' failed."
+done
+
+if ! npm audit; then
+  echo 'You can try to force the fixes, but be ready to address breaking changes:'
+  echo '  npm audit fix --force'
+fi
+npm outdated || echo "TODO: update dependencies manually."

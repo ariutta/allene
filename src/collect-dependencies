@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+
+ALLE_PKG_JSON_PATH="./package.json"
+ALLE_PKG_JSON_LKG_PATH="/tmp/package.lkg.json"
+ALLE_PKG_JSON_UPDATED_PATH="/tmp/package.updated.json"
+
+cleanup() {
+  if [ -e "$ALLE_PKG_JSON_LKG_PATH" ]; then
+    rm "$ALLE_PKG_JSON_LKG_PATH"
+  fi
+  if [ -e "$ALLE_PKG_JSON_UPDATED_PATH" ]; then
+    rm "$ALLE_PKG_JSON_UPDATED_PATH"
+  fi
+}
+
+# Based on http://linuxcommand.org/lc3_wss0140.php
+# and https://codeinthehole.com/tips/bash-error-reporting/
+PROGNAME=$(basename $0)
+error_exit() {
+  #	----------------------------------------------------------------
+  #	Function for exit due to fatal program error
+  #		Accepts 1 argument:
+  #			string containing descriptive error message
+  #	----------------------------------------------------------------
+
+  # Restoring last-know-good package.json
+  cp "$ALLE_PKG_JSON_LKG_PATH" "$ALLE_PKG_JSON_PATH"
+
+  #echo "${PROGNAME}: ${1:-"Unknown Error"}" 1>&2
+  if [ ! "$1" ]; then
+    echo "${PROGNAME}: Unknown Error" 1>&2
+    read line file <<<$(caller)
+    echo "An error occurred in line $line of file $file:" 1>&2
+    sed "${line}q;d" "$file" 1>&2
+  else
+    echo "${PROGNAME}: $1" 1>&2
+  fi
+
+  cleanup
+  exit 1
+}
+
+trap error_exit ERR
+trap cleanup EXIT INT QUIT TERM
+
+if [ ! -e "$ALLE_PKG_JSON_PATH" ]; then
+  echo "Missing alle top-level package.json"
+  # TODO: do we want to npm init or just provide a minimal placeholder?
+  #npm init
+  echo '{"dependencies": {}}' >"$ALLE_PKG_JSON_PATH"
+fi
+
+cp "$ALLE_PKG_JSON_PATH" "$ALLE_PKG_JSON_LKG_PATH"
+
+package_json_paths=$(ls -1 packages/node_modules/\@*/*/package.json packages/node_modules/*/package.json)
+
+names=$(cat $package_json_paths |
+  jq --slurp 'map(.name)')
+
+echo "Local packages found:"
+echo "$names" | jq -r '.[]'
+
+QUERY=$(
+  (sed 's/^\s*//g' | tr -d '\012') <<END
+map((.dependencies // {} | to_entries) + (.devDependencies // {} | to_entries)) |
+flatten | group_by(.key) |
+map(reduce .[] as \$item ({key: "", semvers: []}; {
+  key: \$item["key"],
+  semvers: (.semvers + [
+    \$item["value"] |
+    capture("(
+      (?<alias>(npm:@?[\\\\w][\\\\w\\\\-\\\\/\\\\.]*)@?)?
+      (
+        ((?<prefix>[~^]?)?(?<major>[0-9]+).(?<minor>[0-9]+).(?<patch>[0-9]+))
+        |
+        (?<url>((git|http).*))
+      )?
+    )")
+  ])
+})) |
+map({
+  key,
+  latest_semver: (.semvers | sort_by(.url, .major, .minor, .patch) | last)
+}) |
+map({
+  (.key): (
+    [
+      .latest_semver.alias,
+      .latest_semver.prefix,
+      (
+        .latest_semver |
+        (
+          [.url, .major, .minor, .patch] |
+          map(select(. != null)) |
+          map(tostring) |
+          join(".")
+        )
+      )
+    ] |
+    map(select(. != null)) |
+    join("")
+  )
+}) |
+reduce .[] as \$item ({}; \$item * .) | . as \$mergedDependencies |
+keys - \$excludeNames |
+reduce .[] as \$includeName ({}; {(\$includeName): \$mergedDependencies[\$includeName]} * .) | . as \$collectedDependencies
+| \$packageJson | .dependencies |= \$collectedDependencies
+END
+)
+
+# Collect the latest versions of each dependency that is
+# not under development in this alle project and apply
+# the results to update the top-level alle package.json.
+# In the capture section, we are extracting urls and semvers,
+# but we are not currently handling git references.
+jq --slurp --sort-keys --argjson excludeNames "$names" --argfile packageJson "$ALLE_PKG_JSON_PATH" \
+  "$QUERY" \
+  $package_json_paths >"$ALLE_PKG_JSON_UPDATED_PATH"
+mv "$ALLE_PKG_JSON_UPDATED_PATH" "$ALLE_PKG_JSON_PATH"
