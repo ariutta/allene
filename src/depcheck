@@ -38,10 +38,10 @@ error_exit() {
 }
 trap error_exit ERR
 trap cleanup EXIT INT QUIT TERM
-
 shopt -s globstar
+shopt -s extglob
 
-names=$(jq -r '.[] | .name' local-packages.json)
+names=$(jq -sr '.[] | .name' local-packages.json)
 
 PEER_DEPENDENCIES_BY_DEPENDENT_F="$SCRIPT_DIR"/peer-dependencies-by-dependent.json
 PEER_DEPENDENTS_BY_DEPENDENCY_F="$SCRIPT_DIR"/peer-dependents-by-dependency.json

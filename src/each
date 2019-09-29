@@ -3,10 +3,14 @@
 # see https://stackoverflow.com/a/246128/5354298
 get_script_dir() { echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; }
 SCRIPT_DIR=$(get_script_dir)
+START_DIR=$(pwd)
+on_error() {
+  true
+}
 cleanup_complete=0
 cleanup() {
   echo 'Cleaning up...'
-  cd "$SCRIPT_DIR" || return
+  cd "$START_DIR" || return
   cleanup_complete=1
 }
 # Based on http://linuxcommand.org/lc3_wss0140.php
@@ -36,35 +40,21 @@ error_exit() {
   fi
   exit 1
 }
+trap error_exit ERR
+trap cleanup EXIT INT QUIT TERM
+shopt -s globstar
+shopt -s extglob
 
 if [[ -z "$*" ]]; then
   echo "Command required: $0 <cmd>"
   exit 1
 fi
 
-for name in $(jq -r 'map(.name) | @sh' "./local-packages.json"); do
-  cd "$SCRIPT_DIR" || exit 1
+for name in $(jq -sr 'map(.name) | .[]' "./local-packages.json"); do
+  cd "$START_DIR" || exit 1
   echo ""
   echo "***********************************"
   echo "$name"
   echo "***********************************"
-  (eval "cd ./packages/node_modules/$name || exit 1" && eval "$@") || break
+  (cd ./packages/node_modules/"$name" || exit 1 && eval "$@") || break
 done
-
-#jq -r '.[] | "\(.name)"' \
-#  "./local-packages.json" |
-#  while read -r name; do
-#    cd "$SCRIPT_DIR" || exit 1
-#    echo ""
-#    echo "***********************************"
-#    echo "$name"
-#    echo "***********************************"
-#    #(cd ./packages/node_modules/"$name" || exit 1; eval "$@")
-#    cd ./packages/node_modules/"$name" || exit 1
-#    eval "$@"
-#    echo "done"
-#  done
-#
-#echo "done outside"
-#
-#cd "$SCRIPT_DIR" || exit 1

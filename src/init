@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+
+# see https://stackoverflow.com/a/246128/5354298
+get_script_dir() { echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; }
+SCRIPT_DIR=$(get_script_dir)
+START_DIR=$(pwd)
+on_error() {
+  true
+}
+cleanup_complete=0
+cleanup() {
+  echo 'Cleaning up...'
+  cd "$START_DIR" || return
+  cleanup_complete=1
+}
+# Based on http://linuxcommand.org/lc3_wss0140.php
+# and https://codeinthehole.com/tips/bash-error-reporting/
+error_exit() {
+  #	----------------------------------------------------------------
+  #	Function for exit due to fatal program error
+  #		Accepts 1 argument:
+  #			string containing descriptive error message
+  #	----------------------------------------------------------------
+
+  on_error
+
+  read -r line file <<<"$(caller)"
+  echo "" 1>&2
+  echo "ERROR: file $file, line $line" 1>&2
+  if [ ! "$1" ]; then
+    sed "${line}q;d" "$SCRIPT_DIR/$file" 1>&2
+  else
+    echo "${1:-"Unknown Error"}" 1>&2
+  fi
+  echo "" 1>&2
+
+  # TODO: should error_exit call cleanup?
+  #       The EXIT trap already calls cleanup, so
+  #       calling it here means calling it twice.
+  if [ ! $cleanup_complete ]; then
+    cleanup
+  fi
+  exit 1
+}
+trap error_exit ERR
+trap cleanup EXIT INT QUIT TERM
+shopt -s globstar
+shopt -s extglob
+
+# from https://stackoverflow.com/a/8574392
+contains_element () {
+  local e match="$1"
+  shift
+  for e; do [[ "$e" == "$match" ]] && return 0; done
+  return 1
+}
+
+get_deps() {
+  pkg="$1"
+  for dep in $(yarn info --json "$pkg" | jq -r '.data | (.dependencies // {}) + (.devDependencies // {}) + (.peerDependencies // {}) | keys | .[]'); do
+    echo "$dep"
+  done
+}
+
+get_my_deps() {
+  username="$1"
+  pkg="$2"
+  collected="$3"
+  if [[ -z "$collected" ]]; then
+    collected=("$pkg")
+  fi
+  for dep in $(get_deps "$pkg"); do
+    yarn_info=$(yarn info --json "$dep")
+    if echo "$yarn_info" | jq -r '.data.maintainers[].name' | rg -q "^$username\$"; then
+      if ! contains_element "$dep" "${collected[@]}"; then
+        echo "$dep"
+        collected+=( "$dep" )
+        get_my_deps "$username" "$dep" "${collected[@]}"
+      fi
+    fi
+  done
+}
+
+pkg_in="$1"
+username=$(yarn login --json | jq -r '.data | capture("npm\\ username:\\ (?<username>.+)") | .username')
+
+if ! jq --version >/dev/null 2>&1; then
+  error_exit "Install jq"
+fi
+
+if [[ -z "$username" ]]; then
+  error_exit "Please log in: yarn login"
+fi
+
+if [ ! -e ./local-packages.json ]; then
+  repo_url=$(yarn info --json "$pkg_in" | jq -r '.data.repository.url | capture("\\.com\\/(?<user>([\\w\\-]+))\\/(?<repo>([\\w\\-]+))") | "git@github.com:\(.user)/\(.repo).git"')
+  echo "{\"name\": \"$pkg_in\", \"repository\": \"$repo_url\"}" >> ./local-packages.json
+  for dep in $(get_my_deps "$username" "$pkg_in"); do
+    repo_url=$(yarn info --json "$dep" | jq -r '.data.repository.url | capture("\\.com\\/(?<user>([\\w\\-]+))\\/(?<repo>([\\w\\-]+))") | "git@github.com:\(.user)/\(.repo).git"')
+    echo "{\"name\": \"$dep\", \"repository\": \"$repo_url\"}" | cat - ./local-packages.json > temp && mv temp ./local-packages.json
+  done
+fi
+
+if [ -e ./local-packages.json ] && [ ! -d packages/node_modules ]; then
+  # Make directories for the local packages
+  jq -sr '.[] | "mkdir -p ./packages/node_modules/\(.name)"' "./local-packages.json" |
+    while read -r cmd; do
+      $cmd
+    done
+
+  # Clone the local packages
+  jq -sr '.[] | "git clone \(.repository) ./packages/node_modules/\(.name)"' "./local-packages.json" |
+    while read -r cmd; do
+      $cmd
+    done
+fi
+
+echo "collecting dependencies..."
+"$SCRIPT_DIR"/collect-dependencies
+echo "installing..."
+npm install
+echo "linking bins..."
+"$SCRIPT_DIR"/link-bins
+echo "building..."
+
+package_json_paths=$(ls -1 packages/node_modules/!(available)/**/package.json)
+
+for pkg_f in $package_json_paths; do
+  dir_path=$(dirname "$pkg_f")
+  echo "$dir_path"
+  mkdir -p "$(dirname "./tmp/$dir_path")"
+  mv "$dir_path" ./tmp/"$dir_path"
+done
+for pkg_f in $package_json_paths; do
+  dir_path=$(dirname "$pkg_f")
+  echo "$dir_path"
+  mv ./tmp/"$dir_path" "$dir_path"
+  cd "$dir_path" || exit 1
+  npm run build
+  cd "$START_DIR" || exit 1
+done
+rm -rf ./tmp
+
+"$SCRIPT_DIR"/each npm run build

@@ -3,10 +3,14 @@
 # see https://stackoverflow.com/a/246128/5354298
 get_script_dir() { echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; }
 SCRIPT_DIR=$(get_script_dir)
+START_DIR=$(pwd)
+on_error() {
+  true
+}
 cleanup_complete=0
 cleanup() {
   echo 'Cleaning up...'
-  cd "$SCRIPT_DIR" || return
+  cd "$START_DIR" || return
   cleanup_complete=1
 }
 # Based on http://linuxcommand.org/lc3_wss0140.php
@@ -38,22 +42,32 @@ error_exit() {
 }
 trap error_exit ERR
 trap cleanup EXIT INT QUIT TERM
+shopt -s globstar
+shopt -s extglob
 
 ALLE_PKG_JSON_PATH="./package.json"
-BIN_DIR="$SCRIPT_DIR/packages/node_modules/.bin"
+BIN_DIR="$START_DIR/packages/node_modules/.bin"
 
 if [ ! -e "$ALLE_PKG_JSON_PATH" ]; then
   error_exit "Missing alle top-level package.json"
 fi
 
+mkdir -p "$BIN_DIR"
+
 # TODO: be consistent with how to handle symlinks.
 # I'm removing them all here, bc some of the 'ln -s ...' commands below
 # don't check whether the symlink exists, but some do check.
-rm "$BIN_DIR"/*
+for f in "$BIN_DIR"/*; do
+  if [[ -d "$f" ]]; then
+    rm -r "$f"
+  elif [[ -e "$f" ]]; then
+    rm "$f"
+  fi
+done
 
 # create symlinks for third-party command line tools
 for name in $(jq -r '.dependencies | keys | @sh' "$ALLE_PKG_JSON_PATH"); do
-  eval "cd \"$SCRIPT_DIR\"/node_modules/$name || exit 1"
+  eval "cd \"$START_DIR\"/node_modules/$name || exit 1"
   if [ "$(jq 'has("bin")' package.json)" == 'true' ]; then
     jq -r --arg name "$name" --arg BIN_DIR "$BIN_DIR" \
       '.bin | to_entries | .[] | "ln -s ../../../node_modules/\($name)/\"\(.value)\" \"\($BIN_DIR)/\(.key)\""' \
@@ -88,14 +102,18 @@ for name in $(jq -r '.dependencies | keys | @sh' "$ALLE_PKG_JSON_PATH"); do
       fi
     done
   fi
-  cd "$SCRIPT_DIR" || exit 1
+  cd "$START_DIR" || exit 1
 done
 
-rm "$BIN_DIR/npm"
-#rm "$BIN_DIR/npm-cli.js"
+if [ -e "$BIN_DIR/npm" ]; then
+  rm "$BIN_DIR/npm"
+  #rm "$BIN_DIR/npm-cli.js"
+fi
+
+package_json_paths=$(ls -1 packages/node_modules/!(available)/**/package.json)
 
 # create symlinks for local command line tools
-for pkg_f in packages/node_modules/\@*/*/package.json packages/node_modules/*/package.json; do
+for pkg_f in $package_json_paths; do
   local_dir=$(dirname "$pkg_f")
   cd "$local_dir" || exit 1
   if [ -d bin ]; then
@@ -115,5 +133,5 @@ for pkg_f in packages/node_modules/\@*/*/package.json packages/node_modules/*/pa
       fi
     done
   fi
-  cd "$SCRIPT_DIR" || exit 1
+  cd "$START_DIR" || exit 1
 done

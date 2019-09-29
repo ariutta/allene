@@ -4,18 +4,22 @@ ALLE_PKG_JSON_PATH="./package.json"
 ALLE_PKG_JSON_LKG_PATH="/tmp/package.lkg.json"
 ALLE_PKG_JSON_UPDATED_PATH="/tmp/package.updated.json"
 
-cleanup() {
-  if [ -e "$ALLE_PKG_JSON_LKG_PATH" ]; then
-    rm "$ALLE_PKG_JSON_LKG_PATH"
-  fi
-  if [ -e "$ALLE_PKG_JSON_UPDATED_PATH" ]; then
-    rm "$ALLE_PKG_JSON_UPDATED_PATH"
-  fi
+# see https://stackoverflow.com/a/246128/5354298
+get_script_dir() { echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; }
+SCRIPT_DIR=$(get_script_dir)
+START_DIR=$(pwd)
+on_error() {
+  # Restoring last-know-good package.json
+  cp "$ALLE_PKG_JSON_LKG_PATH" "$ALLE_PKG_JSON_PATH"
 }
-
+cleanup_complete=0
+cleanup() {
+  echo 'Cleaning up...'
+  cd "$START_DIR" || return
+  cleanup_complete=1
+}
 # Based on http://linuxcommand.org/lc3_wss0140.php
 # and https://codeinthehole.com/tips/bash-error-reporting/
-PROGNAME=$(basename $0)
 error_exit() {
   #	----------------------------------------------------------------
   #	Function for exit due to fatal program error
@@ -23,25 +27,30 @@ error_exit() {
   #			string containing descriptive error message
   #	----------------------------------------------------------------
 
-  # Restoring last-know-good package.json
-  cp "$ALLE_PKG_JSON_LKG_PATH" "$ALLE_PKG_JSON_PATH"
+  on_error
 
-  #echo "${PROGNAME}: ${1:-"Unknown Error"}" 1>&2
+  read -r line file <<<"$(caller)"
+  echo "" 1>&2
+  echo "ERROR: file $file, line $line" 1>&2
   if [ ! "$1" ]; then
-    echo "${PROGNAME}: Unknown Error" 1>&2
-    read line file <<<$(caller)
-    echo "An error occurred in line $line of file $file:" 1>&2
-    sed "${line}q;d" "$file" 1>&2
+    sed "${line}q;d" "$SCRIPT_DIR/$file" 1>&2
   else
-    echo "${PROGNAME}: $1" 1>&2
+    echo "${1:-"Unknown Error"}" 1>&2
   fi
+  echo "" 1>&2
 
-  cleanup
+  # TODO: should error_exit call cleanup?
+  #       The EXIT trap already calls cleanup, so
+  #       calling it here means calling it twice.
+  if [ ! $cleanup_complete ]; then
+    cleanup
+  fi
   exit 1
 }
-
 trap error_exit ERR
 trap cleanup EXIT INT QUIT TERM
+shopt -s globstar
+shopt -s extglob
 
 if [ ! -e "$ALLE_PKG_JSON_PATH" ]; then
   echo "Missing alle top-level package.json"
@@ -52,7 +61,7 @@ fi
 
 cp "$ALLE_PKG_JSON_PATH" "$ALLE_PKG_JSON_LKG_PATH"
 
-package_json_paths=$(ls -1 packages/node_modules/\@*/*/package.json packages/node_modules/*/package.json)
+package_json_paths=$(ls -1 packages/node_modules/!(available)/**/package.json)
 
 names=$(cat $package_json_paths |
   jq --slurp 'map(.name)')
