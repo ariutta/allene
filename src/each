@@ -22,11 +22,16 @@ error_exit() {
   #			string containing descriptive error message
   #	----------------------------------------------------------------
 
+  on_error
+
   read -r line file <<<"$(caller)"
+  if [ ! -e "$file" ]; then
+    file="$SCRIPT_DIR/$file"
+  fi
   echo "" 1>&2
   echo "ERROR: file $file, line $line" 1>&2
-  if [ ! "$1" ]; then
-    sed "${line}q;d" "$SCRIPT_DIR/$file" 1>&2
+  if [ ! "$1" ] && [ -e "$file" ]; then
+    sed "${line}q;d" "$file" 1>&2
   else
     echo "${1:-"Unknown Error"}" 1>&2
   fi
@@ -44,6 +49,16 @@ trap error_exit ERR
 trap cleanup EXIT INT QUIT TERM
 shopt -s globstar
 shopt -s extglob
+
+if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
+  echo "allene commands:"
+  for f in "$SCRIPT_DIR"/src/*; do
+    if [ -x "$f" ]; then
+      basename "$f"
+    fi
+  done
+  exit 0
+fi
 
 if [[ -z "$*" ]]; then
   echo "Command required: $0 <cmd>"

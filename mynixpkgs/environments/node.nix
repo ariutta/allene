@@ -16,7 +16,7 @@ in common ++ [
 #  pkgs.nodePackages.webpack
 #  pkgs.nodePackages.webpack-cli
 
-  custom.depcheck
+#  custom.depcheck
 
   # Yarn ecosystem?
   #pkgs.nodePackages.lerna

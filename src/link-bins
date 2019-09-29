@@ -22,11 +22,16 @@ error_exit() {
   #			string containing descriptive error message
   #	----------------------------------------------------------------
 
+  on_error
+
   read -r line file <<<"$(caller)"
+  if [ ! -e "$file" ]; then
+    file="$SCRIPT_DIR/$file"
+  fi
   echo "" 1>&2
   echo "ERROR: file $file, line $line" 1>&2
-  if [ ! "$1" ]; then
-    sed "${line}q;d" "$SCRIPT_DIR/$file" 1>&2
+  if [ ! "$1" ] && [ -e "$file" ]; then
+    sed "${line}q;d" "$file" 1>&2
   else
     echo "${1:-"Unknown Error"}" 1>&2
   fi
@@ -45,6 +50,16 @@ trap cleanup EXIT INT QUIT TERM
 shopt -s globstar
 shopt -s extglob
 
+if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
+  echo "allene commands:"
+  for f in "$SCRIPT_DIR"/src/*; do
+    if [ -x "$f" ]; then
+      basename "$f"
+    fi
+  done
+  exit 0
+fi
+
 ALLE_PKG_JSON_PATH="./package.json"
 BIN_DIR="$START_DIR/packages/node_modules/.bin"
 
@@ -57,20 +72,25 @@ mkdir -p "$BIN_DIR"
 # TODO: be consistent with how to handle symlinks.
 # I'm removing them all here, bc some of the 'ln -s ...' commands below
 # don't check whether the symlink exists, but some do check.
-for f in "$BIN_DIR"/*; do
-  if [[ -d "$f" ]]; then
-    rm -r "$f"
-  elif [[ -e "$f" ]]; then
-    rm "$f"
-  fi
-done
+rm -rf "$BIN_DIR"
+mkdir -p "$BIN_DIR"
+#for f in "$BIN_DIR"/*; do
+#  echo "$f"
+#  if [ -d "$f" ]; then
+#    rm -r "$f"
+#  elif [ -e "$f" ]; then
+#    rm "$f"
+#  else
+#    echo "deleting $f"
+#  fi
+#done
 
 # create symlinks for third-party command line tools
 for name in $(jq -r '.dependencies | keys | @sh' "$ALLE_PKG_JSON_PATH"); do
   eval "cd \"$START_DIR\"/node_modules/$name || exit 1"
   if [ "$(jq 'has("bin")' package.json)" == 'true' ]; then
     jq -r --arg name "$name" --arg BIN_DIR "$BIN_DIR" \
-      '.bin | to_entries | .[] | "ln -s ../../../node_modules/\($name)/\"\(.value)\" \"\($BIN_DIR)/\(.key)\""' \
+      '.bin | to_entries | .[] | "if [ ! -e \"\($BIN_DIR)/\(.key)\" ]; then ln -s ../../../node_modules/\($name)/\"\(.value)\" \"\($BIN_DIR)/\(.key)\"; fi"' \
       package.json |
       while read -r cmd; do
         #echo "$cmd"

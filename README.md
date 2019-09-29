@@ -1,9 +1,15 @@
-# allify
+# allene
 
-Tools to help work with the [alle](https://github.com/boennemann/alle) structure,
-which allows for editing multiple related projects in sync.
+The [alle](https://github.com/boennemann/alle) structure allows for editing
+multiple related projects in sync. Allene is a tool that makes it easy to:
 
-- `collect-local-packages.sh`: get name/repo for every dep in `./packages/`
+- set up your projects in the alle structure
+- update dependencies
+- find unused dependencies
+
+## Usage
+
+Run `allene --help` to see available commands.
 
 ## Sync mynixpkgs
 
@@ -15,27 +21,6 @@ git subtree push --prefix mynixpkgs mynixpkgs master
 ```
 
 ## TODO
-
-## command line tools
-
-It seems necessary to symlink some Node.js command line tools. For example,
-this gives an error about gulp not being available:
-
-```
-cd ./packages/node_modules/svg-pan-zoom
-npm run build
-```
-
-Doing this fixes that error:
-
-```
-mkdir -p ./packages/node_modules/.bin
-cd ./packages/node_modules/.bin
-ln -s ../../../node_modules/gulp/bin/gulp.js gulp
-```
-
-But some of my Node.js command line tools seem to work fine without doing this.
-Why?
 
 ### all namespaced or all not
 

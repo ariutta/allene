@@ -30,10 +30,13 @@ error_exit() {
   on_error
 
   read -r line file <<<"$(caller)"
+  if [ ! -e "$file" ]; then
+    file="$SCRIPT_DIR/$file"
+  fi
   echo "" 1>&2
   echo "ERROR: file $file, line $line" 1>&2
-  if [ ! "$1" ]; then
-    sed "${line}q;d" "$SCRIPT_DIR/$file" 1>&2
+  if [ ! "$1" ] && [ -e "$file" ]; then
+    sed "${line}q;d" "$file" 1>&2
   else
     echo "${1:-"Unknown Error"}" 1>&2
   fi

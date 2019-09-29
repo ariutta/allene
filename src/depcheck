@@ -3,10 +3,14 @@
 # see https://stackoverflow.com/a/246128/5354298
 get_script_dir() { echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; }
 SCRIPT_DIR=$(get_script_dir)
+START_DIR=$(pwd)
+on_error() {
+  true
+}
 cleanup_complete=0
 cleanup() {
   echo 'Cleaning up...'
-  cd "$SCRIPT_DIR" || return
+  cd "$START_DIR" || return
   cleanup_complete=1
 }
 # Based on http://linuxcommand.org/lc3_wss0140.php
@@ -18,11 +22,16 @@ error_exit() {
   #			string containing descriptive error message
   #	----------------------------------------------------------------
 
+  on_error
+
   read -r line file <<<"$(caller)"
+  if [ ! -e "$file" ]; then
+    file="$SCRIPT_DIR/$file"
+  fi
   echo "" 1>&2
   echo "ERROR: file $file, line $line" 1>&2
-  if [ ! "$1" ]; then
-    sed "${line}q;d" "$SCRIPT_DIR/$file" 1>&2
+  if [ ! "$1" ] && [ -e "$file" ]; then
+    sed "${line}q;d" "$file" 1>&2
   else
     echo "${1:-"Unknown Error"}" 1>&2
   fi
@@ -41,10 +50,20 @@ trap cleanup EXIT INT QUIT TERM
 shopt -s globstar
 shopt -s extglob
 
+if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
+  echo "allene commands:"
+  for f in "$SCRIPT_DIR"/src/*; do
+    if [ -x "$f" ]; then
+      basename "$f"
+    fi
+  done
+  exit 0
+fi
+
 names=$(jq -sr '.[] | .name' local-packages.json)
 
-PEER_DEPENDENCIES_BY_DEPENDENT_F="$SCRIPT_DIR"/peer-dependencies-by-dependent.json
-PEER_DEPENDENTS_BY_DEPENDENCY_F="$SCRIPT_DIR"/peer-dependents-by-dependency.json
+PEER_DEPENDENCIES_BY_DEPENDENT_F="$START_DIR"/peer-dependencies-by-dependent.json
+PEER_DEPENDENTS_BY_DEPENDENCY_F="$START_DIR"/peer-dependents-by-dependency.json
 if [ ! -e "$PEER_DEPENDENCIES_BY_DEPENDENT_F" ]; then
   echo "Getting list of peer dependency relationships. Caching in $PEER_DEPENDENCIES_BY_DEPENDENT_F."
   for pkg in $(jq -r '.dependencies | to_entries | map("\(.key)@\(.value)") | @sh' package.json); do
@@ -120,5 +139,5 @@ for pkg in $names; do
   #depcheck is very slow, and it seems to be doing something wrong w/ Nix.
   #depcheck --json --ignore-dir "./packages/node_modules/$pkg/lib" "./packages/node_modules/$pkg"
 
-  cd "$SCRIPT_DIR" || error_exit "Error: 'cd \"$SCRIPT_DIR\"' failed."
+  cd "$START_DIR" || error_exit "Error: 'cd \"$START_DIR\"' failed."
 done
