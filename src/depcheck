@@ -107,7 +107,7 @@ for pkg in $names; do
         true
         #echo "$dep is found in scripts"
       else
-        peer_dependencies=$(comm -12  <(jq -r '(.dependencies // {}) + (.devDependencies // {}) | keys | .[]' package.json | sort -u) <(jq -r '.webpack | .[]' "$PEER_DEPENDENCIES_BY_DEPENDENT_F" | sort -u))
+        peer_dependencies=$(comm -12  <(jq -r '(.dependencies // {}) + (.devDependencies // {}) | keys | .[]' package.json | sort -u) <(jq -r ".$dep | .[]" "$PEER_DEPENDENCIES_BY_DEPENDENT_F" | sort -u))
         if [ -n "$peer_dependencies" ]; then
           true
           # echo "$dep needed as peer dependency for $peer_dependencies" | paste -sd "," -

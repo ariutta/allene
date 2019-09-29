@@ -114,11 +114,13 @@ map({
   )
 }) |
 reduce .[] as \$item ({}; \$item * .) | . as \$mergedDependencies |
-keys - \$excludeNames |
+keys |
 reduce .[] as \$includeName ({}; {(\$includeName): \$mergedDependencies[\$includeName]} * .) | . as \$collectedDependencies
 | \$packageJson | .dependencies |= \$collectedDependencies
 END
 )
+
+#keys - \$excludeNames |
 
 # Collect the latest versions of each dependency that is
 # not under development in this alle project and apply

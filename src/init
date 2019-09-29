@@ -144,14 +144,36 @@ for pkg_f in $package_json_paths; do
   mkdir -p "$(dirname "./tmp/$dir_path")"
   mv "$dir_path" ./tmp/"$dir_path"
 done
-for pkg_f in $package_json_paths; do
-  dir_path=$(dirname "$pkg_f")
-  echo "$dir_path"
-  mv ./tmp/"$dir_path" "$dir_path"
-  cd "$dir_path" || exit 1
-  npm run build
-  cd "$START_DIR" || exit 1
-done
-rm -rf ./tmp
 
+build_packages() {
+  echo "building packages..."
+  cd "$START_DIR" || error_exit "Cannot cd to $START_DIR"
+  remaining_package_json_paths=$(ls -1 tmp/packages/node_modules/!(available)/**/package.json)
+  if [ -z "$remaining_package_json_paths" ]; then
+    return
+  fi
+  for pkg_f in $package_json_paths; do
+    if [ ! -e "./tmp/$pkg_f" ]; then
+      continue
+    fi
+    remaining_package_json_paths=$(ls -1 tmp/packages/node_modules/!(available)/**/package.json)
+    local_dependencies=$(comm -12  <(jq -r '(.dependencies // {}) + (.peerDependencies // {}) | keys | .[]' "./tmp/$pkg_f" | sort -u) <(jq -r '.name' $remaining_package_json_paths | sort -u))
+    if [ -n "$local_dependencies" ]; then
+      continue
+    fi
+    dir_path=$(dirname "$pkg_f")
+    mv "./tmp/$dir_path" "$dir_path"
+    cd "$dir_path" || error_exit "Cannot cd to $dir_path"
+    jq -r '.name' package.json >> "$START_DIR"/mydeps.tsv
+    pwd
+    npm run build
+    cd "$START_DIR" || error_exit "Cannot cd to $START_DIR"
+  done
+  build_packages
+}
+
+touch "$START_DIR"/mydeps.tsv
+rm "$START_DIR"/mydeps.tsv
+build_packages
+rm -rf ./tmp
 "$SCRIPT_DIR"/each npm run build

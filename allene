@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+# see https://stackoverflow.com/a/246128/5354298
+get_script_dir() { echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; }
+SCRIPT_DIR=$(get_script_dir)
+START_DIR=$(pwd)
+on_error() {
+  true
+}
+cleanup_complete=0
+cleanup() {
+  echo 'Cleaning up...'
+  cd "$START_DIR" || return
+  cleanup_complete=1
+}
+# Based on http://linuxcommand.org/lc3_wss0140.php
+# and https://codeinthehole.com/tips/bash-error-reporting/
+error_exit() {
+  #	----------------------------------------------------------------
+  #	Function for exit due to fatal program error
+  #		Accepts 1 argument:
+  #			string containing descriptive error message
+  #	----------------------------------------------------------------
+
+  on_error
+
+  read -r line file <<<"$(caller)"
+  if [ ! -e "$file" ]; then
+    file="$SCRIPT_DIR/$file"
+  fi
+  echo "" 1>&2
+  echo "ERROR: file $file, line $line" 1>&2
+  if [ ! "$1" ] && [ -e "$file" ]; then
+    sed "${line}q;d" "$file" 1>&2
+  else
+    echo "${1:-"Unknown Error"}" 1>&2
+  fi
+  echo "" 1>&2
+
+  # TODO: should error_exit call cleanup?
+  #       The EXIT trap already calls cleanup, so
+  #       calling it here means calling it twice.
+  if [ ! $cleanup_complete ]; then
+    cleanup
+  fi
+  exit 1
+}
+trap error_exit ERR
+trap cleanup EXIT INT QUIT TERM
+shopt -s globstar
+shopt -s extglob
+
+if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
+  echo "allene commands:"
+  for f in "$SCRIPT_DIR"/src/*; do
+    if [ -x "$f" ]; then
+      basename "$f"
+    fi
+  done
+  exit 0
+fi
+
+allene_cmd="$1"
+
+if [ ! -x "$SCRIPT_DIR"/src/"$allene_cmd" ]; then
+  echo "Valid commands:"
+  for f in "$SCRIPT_DIR"/src/*; do
+    if [ -x "$f" ]; then
+      basename "$f"
+    fi
+  done
+  error_exit "Invalid command: $allene_cmd"
+fi
+
+#eval "$SCRIPT_DIR"/src/"$allene_cmd" "$@"
+echo "$SCRIPT_DIR/src/$*"
+eval "$SCRIPT_DIR/src/$*"
