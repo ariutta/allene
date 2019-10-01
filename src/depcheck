@@ -4,13 +4,23 @@
 get_script_dir() { echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; }
 SCRIPT_DIR=$(get_script_dir)
 START_DIR=$(pwd)
+###################
+# Custom variables
+###################
+PEER_DEPENDENCIES_BY_DEPENDENT_F="$START_DIR"/peer-dependencies-by-dependent.json
+PEER_DEPENDENTS_BY_DEPENDENCY_F="$START_DIR"/peer-dependents-by-dependency.json
 on_error() {
-  true
+  if [ -e "$PEER_DEPENDENCIES_BY_DEPENDENT_F" ]; then
+    rm "$PEER_DEPENDENCIES_BY_DEPENDENT_F"
+  fi
 }
 cleanup_complete=0
 cleanup() {
   echo 'Cleaning up...'
   cd "$START_DIR" || return
+  if [ -e "$PEER_DEPENDENTS_BY_DEPENDENCY_F" ]; then
+    rm "$PEER_DEPENDENTS_BY_DEPENDENCY_F"
+  fi
   cleanup_complete=1
 }
 # Based on http://linuxcommand.org/lc3_wss0140.php
@@ -50,26 +60,33 @@ trap cleanup EXIT INT QUIT TERM
 shopt -s globstar
 shopt -s extglob
 
-if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
-  echo "allene commands:"
-  for f in "$SCRIPT_DIR"/src/*; do
-    if [ -x "$f" ]; then
-      basename "$f"
-    fi
-  done
-  exit 0
+if [ -z "$ALLENE_PACMAN_CLI" ]; then
+  ALLENE_PACMAN_CLI="npm"
 fi
+
+get_pkg_info() {
+  pkg="$1"
+  pkg_info='{}'
+  if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
+    pkg_info=$(yarn info --json "$pkg" | jq -r '.data')
+  else
+    pkg_info=$(npm info --json "$pkg")
+  fi
+  echo "$pkg_info"
+}
 
 names=$(jq -sr '.[] | .name' local-packages.json)
 
-PEER_DEPENDENCIES_BY_DEPENDENT_F="$START_DIR"/peer-dependencies-by-dependent.json
-PEER_DEPENDENTS_BY_DEPENDENCY_F="$START_DIR"/peer-dependents-by-dependency.json
 if [ ! -e "$PEER_DEPENDENCIES_BY_DEPENDENT_F" ]; then
-  echo "Getting list of peer dependency relationships. Caching in $PEER_DEPENDENCIES_BY_DEPENDENT_F."
-  for pkg in $(jq -r '.dependencies | to_entries | map("\(.key)@\(.value)") | @sh' package.json); do
-    eval "npm info --json $pkg" | jq 'select(.peerDependencies) | {(.name): .peerDependencies | keys}' \
+  echo "Detecting peer dependencies. May be slow the first time but will be cached for future runs."
+
+  for caret_versioned_pkg in $(jq -r '.dependencies | to_entries | map("\(.key)@\(.value)") | .[]' package.json); do
+    pkg=${caret_versioned_pkg//\^/''}
+    echo "$pkg" >/dev/stderr
+    get_pkg_info "$pkg" | jq 'select(.peerDependencies) | {(.name): .peerDependencies | keys}' \
       >>"$PEER_DEPENDENTS_BY_DEPENDENCY_F" || break;
   done
+
   jq -s 'reduce .[] as $item({}; . * $item) | to_entries | map(select(.value | length > 0)) | map(.key as $mykey | reduce .value[] as $myvalue ({}; . * {($myvalue): [$mykey]})) | map(to_entries) | reduce .[] as $item ([]; . + $item) | reduce .[] as $item ({}; .[$item["key"]] += $item["value"])' \
     "$PEER_DEPENDENTS_BY_DEPENDENCY_F" > "$PEER_DEPENDENCIES_BY_DEPENDENT_F"
   rm "$PEER_DEPENDENTS_BY_DEPENDENCY_F"
@@ -85,8 +102,7 @@ for pkg in $names; do
   echo "**********************************"
 
   cd "$child_dir" || error_exit "Error: 'cd \"$child_dir\"' failed."
-  for dep_quoted in $(jq -r '(.dependencies // {}) + (.devDependencies // {}) | keys | @sh' package.json); do
-    dep=$(eval "echo $dep_quoted")
+  for dep in $(jq -r '(.dependencies // {}) + (.devDependencies // {}) | keys | .[]' package.json); do
     if [[ "${always_ok_pkgs[*]}" =~ ${dep} ]]; then
       true
       #echo "$dep is ok"
@@ -99,20 +115,24 @@ for pkg in $names; do
       true
       #echo "$dep is found at top-level"
     else
-      typeless=${dep//@types\//}
-      if [ "$typeless" != "$dep" ] && jq -e --arg typeless "$typeless" '(.dependencies // {}) + (.devDependencies // {}) | has($typeless)' package.json >/dev/null; then
+      san_type=${dep//@types\//}
+      san_cli=${dep//\-cli/}
+      if [ "$san_type" != "$dep" ] && jq -e --arg san_type "$san_type" '(.dependencies // {}) + (.devDependencies // {}) | has($san_type)' package.json >/dev/null; then
         true
-        #echo "$dep is required for $typeless"
+        #echo "$dep is required for $san_type"
+      elif [ "$san_cli" != "$dep" ] && jq -e --arg san_cli "$san_cli" '(.dependencies // {}) + (.devDependencies // {}) | has($san_cli)' package.json >/dev/null; then
+        true
+        #echo "$dep is probably required for $san_cli"
       elif jq -e --arg dep "$dep" '.scripts | map(values | test(".*?\($dep).*")) | any' package.json >/dev/null; then
         true
         #echo "$dep is found in scripts"
       else
-        peer_dependencies=$(comm -12  <(jq -r '(.dependencies // {}) + (.devDependencies // {}) | keys | .[]' package.json | sort -u) <(jq -r ".$dep | .[]" "$PEER_DEPENDENCIES_BY_DEPENDENT_F" | sort -u))
+        peer_dependencies=$(comm -12  <(jq -r '(.dependencies // {}) + (.devDependencies // {}) | keys | .[]' package.json | sort -u) <(jq -r ".[\"$dep\"] // [] | .[]" "$PEER_DEPENDENCIES_BY_DEPENDENT_F" | sort -u))
         if [ -n "$peer_dependencies" ]; then
           true
           # echo "$dep needed as peer dependency for $peer_dependencies" | paste -sd "," -
         else
-          for bin in $(npm info --json "$dep" bin | jq -r 'keys | .[]'); do
+          for bin in $(get_pkg_info "$dep" | jq -r 'select(.bin) | .bin | keys | .[]'); do
             if jq -r '.scripts' package.json | grep -q "$bin"; then
               #echo "$dep appears needed for CLI command $bin"
               continue 2

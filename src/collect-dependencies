@@ -55,9 +55,14 @@ trap cleanup EXIT INT QUIT TERM
 shopt -s globstar
 shopt -s extglob
 
+if [ -z "$ALLENE_PACMAN_CLI" ]; then
+  ALLENE_PACMAN_CLI="npm"
+fi
+
 if [ ! -e "$ALLE_PKG_JSON_PATH" ]; then
   echo "Missing alle top-level package.json"
-  # TODO: do we want to npm init or just provide a minimal placeholder?
+  #error_exit "Missing alle top-level package.json"
+  # TODO: do we instead want to npm init or provide a minimal placeholder?
   #npm init
   echo '{"dependencies": {}}' >"$ALLE_PKG_JSON_PATH"
 fi
@@ -66,8 +71,7 @@ cp "$ALLE_PKG_JSON_PATH" "$ALLE_PKG_JSON_LKG_PATH"
 
 package_json_paths=$(ls -1 packages/node_modules/!(available)/**/package.json)
 
-names=$(cat $package_json_paths |
-  jq --slurp 'map(.name)')
+names=$(jq -s 'map(.name)' $package_json_paths)
 
 echo "Local packages found:"
 echo "$names" | jq -r '.[]'
@@ -127,7 +131,7 @@ END
 # the results to update the top-level alle package.json.
 # In the capture section, we are extracting urls and semvers,
 # but we are not currently handling git references.
-jq --slurp --sort-keys --argjson excludeNames "$names" --argfile packageJson "$ALLE_PKG_JSON_PATH" \
+jq -s --sort-keys --argjson excludeNames "$names" --argfile packageJson "$ALLE_PKG_JSON_PATH" \
   "$QUERY" \
   $package_json_paths >"$ALLE_PKG_JSON_UPDATED_PATH"
 mv "$ALLE_PKG_JSON_UPDATED_PATH" "$ALLE_PKG_JSON_PATH"

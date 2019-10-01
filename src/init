@@ -4,13 +4,28 @@
 get_script_dir() { echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; }
 SCRIPT_DIR=$(get_script_dir)
 START_DIR=$(pwd)
+###################
+# Custom variables
+###################
+PEER_DEPENDENCIES_BY_DEPENDENT_F="$START_DIR"/peer-dependencies-by-dependent.json
+PEER_DEPENDENTS_BY_DEPENDENCY_F="$START_DIR"/peer-dependents-by-dependency.json
+if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
+  username=$(yarn login --json | jq -r '.data | capture("npm\\ username:\\ (?<username>.+)") | .username')
+else
+  username=$(npm whoami)
+fi
 on_error() {
-  true
+  if [ -e "$PEER_DEPENDENCIES_BY_DEPENDENT_F" ]; then
+    rm "$PEER_DEPENDENCIES_BY_DEPENDENT_F"
+  fi
 }
 cleanup_complete=0
 cleanup() {
   echo 'Cleaning up...'
   cd "$START_DIR" || return
+  if [ -e "$PEER_DEPENDENTS_BY_DEPENDENCY_F" ]; then
+    rm "$PEER_DEPENDENTS_BY_DEPENDENCY_F"
+  fi
   cleanup_complete=1
 }
 # Based on http://linuxcommand.org/lc3_wss0140.php
@@ -50,6 +65,16 @@ trap cleanup EXIT INT QUIT TERM
 shopt -s globstar
 shopt -s extglob
 
+if [ -z "$ALLENE_PACMAN_CLI" ]; then
+  if yarn --version > /dev/null 2>&1; then
+    ALLENE_PACMAN_CLI="yarn"
+  else
+    ALLENE_PACMAN_CLI="npm"
+  fi
+  echo "Using $ALLENE_PACMAN_CLI"
+  export ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI"
+fi
+
 if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
   echo "allene commands:"
   for f in "$SCRIPT_DIR"/src/*; do
@@ -68,9 +93,21 @@ contains_element () {
   return 1
 }
 
+get_pkg_info() {
+  pkg="$1"
+  #echo "pkg: $pkg" >/dev/stderr
+  pkg_info='{}'
+  if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
+    pkg_info=$(yarn info --json "$pkg" | jq -r '.data')
+  else
+    pkg_info=$(npm info --json "$pkg")
+  fi
+  echo "$pkg_info"
+}
+
 get_deps() {
   pkg="$1"
-  for dep in $(yarn info --json "$pkg" | jq -r '.data | (.dependencies // {}) + (.devDependencies // {}) + (.peerDependencies // {}) | keys | .[]'); do
+  for dep in $(get_pkg_info "$pkg" | jq -r '(.dependencies // {}) + (.devDependencies // {}) + (.peerDependencies // {}) | keys | .[]'); do
     echo "$dep"
   done
 }
@@ -83,8 +120,13 @@ get_my_deps() {
     collected=("$pkg")
   fi
   for dep in $(get_deps "$pkg"); do
-    yarn_info=$(yarn info --json "$dep")
-    if echo "$yarn_info" | jq -r '.data.maintainers[].name' | rg -q "^$username\$"; then
+    maintainers=''
+    if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
+      maintainers=$(yarn info --json "$dep" | jq -r '.data.maintainers[].name')
+    else
+      maintainers=$(npm info --json "$dep" | jq -r '.maintainers[] | capture("^(?<name>([\\w\\-]+))\\ <(?<email>(.*))>") | .name')
+    fi
+    if echo "$maintainers" | rg -q "^$username\$"; then
       if ! contains_element "$dep" "${collected[@]}"; then
         echo "$dep"
         collected+=( "$dep" )
@@ -95,21 +137,21 @@ get_my_deps() {
 }
 
 pkg_in="$1"
-username=$(yarn login --json | jq -r '.data | capture("npm\\ username:\\ (?<username>.+)") | .username')
+username="$(whoami)"
 
 if ! jq --version >/dev/null 2>&1; then
   error_exit "Install jq"
 fi
 
 if [[ -z "$username" ]]; then
-  error_exit "Please log in: yarn login"
+  error_exit "Please log in: $ALLENE_PACMAN_CLI login"
 fi
 
 if [ ! -e ./local-packages.json ]; then
-  repo_url=$(yarn info --json "$pkg_in" | jq -r '.data.repository.url | capture("\\.com\\/(?<user>([\\w\\-]+))\\/(?<repo>([\\w\\-]+))") | "git@github.com:\(.user)/\(.repo).git"')
+  repo_url=$(get_pkg_info "$pkg_in" | jq -r '.repository.url | capture("\\.com\\/(?<user>([\\w\\-]+))\\/(?<repo>([\\w\\-]+))") | "git@github.com:\(.user)/\(.repo).git"')
   echo "{\"name\": \"$pkg_in\", \"repository\": \"$repo_url\"}" >> ./local-packages.json
   for dep in $(get_my_deps "$username" "$pkg_in"); do
-    repo_url=$(yarn info --json "$dep" | jq -r '.data.repository.url | capture("\\.com\\/(?<user>([\\w\\-]+))\\/(?<repo>([\\w\\-]+))") | "git@github.com:\(.user)/\(.repo).git"')
+    repo_url=$(get_pkg_info "$dep" | jq -r '.repository.url | capture("\\.com\\/(?<user>([\\w\\-]+))\\/(?<repo>([\\w\\-]+))") | "git@github.com:\(.user)/\(.repo).git"')
     echo "{\"name\": \"$dep\", \"repository\": \"$repo_url\"}" | cat - ./local-packages.json > temp && mv temp ./local-packages.json
   done
 fi
@@ -130,8 +172,32 @@ fi
 
 echo "collecting dependencies..."
 "$SCRIPT_DIR"/collect-dependencies
+
+detect_peer_dependencies() {
+  if [ -e "$PEER_DEPENDENCIES_BY_DEPENDENT_F" ]; then
+    rm "$PEER_DEPENDENCIES_BY_DEPENDENT_F"
+  fi
+  if [ -e "$PEER_DEPENDENTS_BY_DEPENDENCY_F" ]; then
+    rm "$PEER_DEPENDENTS_BY_DEPENDENCY_F"
+  fi
+  echo "Detecting peer dependencies." >/dev/stderr
+
+  for caret_versioned_pkg in $(jq -r '.dependencies | to_entries | map("\(.key)@\(.value)") | .[]' package.json); do
+    pkg=${caret_versioned_pkg//\^/''}
+    get_pkg_info "$pkg" | jq 'select(.peerDependencies) | {(.name): .peerDependencies | keys}' \
+      >>"$PEER_DEPENDENTS_BY_DEPENDENCY_F" || break;
+  done
+
+  jq -s 'reduce .[] as $item({}; . * $item) | to_entries | map(select(.value | length > 0)) | map(.key as $mykey | reduce .value[] as $myvalue ({}; . * {($myvalue): [$mykey]})) | map(to_entries) | reduce .[] as $item ([]; . + $item) | reduce .[] as $item ({}; .[$item["key"]] += $item["value"])' \
+    "$PEER_DEPENDENTS_BY_DEPENDENCY_F" > "$PEER_DEPENDENCIES_BY_DEPENDENT_F"
+  rm "$PEER_DEPENDENTS_BY_DEPENDENCY_F"
+}
+#detect_peer_dependencies
+(detect_peer_dependencies &)
+#nohup detect_peer_dependencies &
+
 echo "installing..."
-npm install
+eval "$ALLENE_PACMAN_CLI install"
 echo "linking bins..."
 "$SCRIPT_DIR"/link-bins
 echo "building..."
@@ -166,7 +232,7 @@ build_packages() {
     cd "$dir_path" || error_exit "Cannot cd to $dir_path"
     jq -r '.name' package.json >> "$START_DIR"/mydeps.tsv
     pwd
-    npm run build
+    eval "$ALLENE_PACMAN_CLI run build"
     cd "$START_DIR" || error_exit "Cannot cd to $START_DIR"
   done
   build_packages
@@ -176,4 +242,4 @@ touch "$START_DIR"/mydeps.tsv
 rm "$START_DIR"/mydeps.tsv
 build_packages
 rm -rf ./tmp
-"$SCRIPT_DIR"/each npm run build
+"$SCRIPT_DIR"/each "$ALLENE_PACMAN_CLI run build"

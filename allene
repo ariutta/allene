@@ -74,4 +74,4 @@ fi
 
 #eval "$SCRIPT_DIR"/src/"$allene_cmd" "$@"
 echo "$SCRIPT_DIR/src/$*"
-eval "$SCRIPT_DIR/src/$*"
+eval "\"$SCRIPT_DIR/src/\"$*"
