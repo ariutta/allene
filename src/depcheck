@@ -16,7 +16,6 @@ on_error() {
 }
 cleanup_complete=0
 cleanup() {
-  echo 'Cleaning up...'
   cd "$START_DIR" || return
   if [ -e "$PEER_DEPENDENTS_BY_DEPENDENCY_F" ]; then
     rm "$PEER_DEPENDENTS_BY_DEPENDENCY_F"
@@ -59,6 +58,12 @@ trap error_exit ERR
 trap cleanup EXIT INT QUIT TERM
 shopt -s globstar
 shopt -s extglob
+
+if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
+  echo "allene depcheck"
+  echo "Check for unused dependencies"
+  exit 0
+fi
 
 if [ -z "$ALLENE_PACMAN_CLI" ]; then
   ALLENE_PACMAN_CLI="npm"

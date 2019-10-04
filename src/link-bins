@@ -9,7 +9,6 @@ on_error() {
 }
 cleanup_complete=0
 cleanup() {
-  echo 'Cleaning up...'
   cd "$START_DIR" || return
   cleanup_complete=1
 }
@@ -51,12 +50,8 @@ shopt -s globstar
 shopt -s extglob
 
 if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
-  echo "allene commands:"
-  for f in "$SCRIPT_DIR"/src/*; do
-    if [ -x "$f" ]; then
-      basename "$f"
-    fi
-  done
+  echo "allene link-bins"
+  echo "Creates directories and symlinks needed for executable files to be accessible to npm/yarn."
   exit 0
 fi
 
@@ -85,15 +80,20 @@ mkdir -p "$BIN_DIR"
 #  fi
 #done
 
+# NOTE: .bin can be an object or a string
+QUERY=$(
+  (sed 's/^\s*//g' | tr -d '\012') <<END
+((.bin|objects) // {(.name): (.bin)}) | to_entries | .[] |
+"if [ ! -e \"\(\$BIN_DIR)/\(.key)\" ]; then ln -s ../../../node_modules/\(\$name)/\"\(.value)\" \"\(\$BIN_DIR)/\(.key)\"; fi"
+END
+)
+
 # create symlinks for third-party command line tools
 for name in $(jq -r '.dependencies | keys | @sh' "$ALLE_PKG_JSON_PATH"); do
   eval "cd \"$START_DIR\"/node_modules/$name || exit 1"
   if [ "$(jq 'has("bin")' package.json)" == 'true' ]; then
-    jq -r --arg name "$name" --arg BIN_DIR "$BIN_DIR" \
-      '.bin | to_entries | .[] | "if [ ! -e \"\($BIN_DIR)/\(.key)\" ]; then ln -s ../../../node_modules/\($name)/\"\(.value)\" \"\($BIN_DIR)/\(.key)\"; fi"' \
-      package.json |
+    jq -r --arg name "$name" --arg BIN_DIR "$BIN_DIR" "$QUERY" package.json |
       while read -r cmd; do
-        #echo "$cmd"
         eval "$cmd"
       done
   elif [ -d bin ]; then
@@ -135,7 +135,14 @@ package_json_paths=$(ls -1 packages/node_modules/!(available)/**/package.json)
 # create symlinks for local command line tools
 for pkg_f in $package_json_paths; do
   local_dir=$(dirname "$pkg_f")
-  cd "$local_dir" || exit 1
+  cd "$local_dir" || error_exit "Failed to cd into $local_dir"
+  if [ ! -d node_modules ]; then
+    mkdir node_modules
+  fi
+  if [ ! -d node_modules/.bin ]; then
+    ln -s "$BIN_DIR" node_modules/.bin
+  fi
+  #(cd node_modules || error_exit "Failed to cd into $local_dir/node_modules"; ln -s "$BIN_DIR" .bin)
   if [ -d bin ]; then
     cd bin || exit 1
     source_dir="$(pwd)"

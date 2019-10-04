@@ -9,7 +9,6 @@ on_error() {
 }
 cleanup_complete=0
 cleanup() {
-  echo 'Cleaning up...'
   cd "$START_DIR" || return
   cleanup_complete=1
 }
@@ -51,35 +50,59 @@ shopt -s globstar
 shopt -s extglob
 
 if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
-  echo "allene commands:"
-  for f in "$SCRIPT_DIR"/src/*; do
-    if [ -x "$f" ]; then
-      basename "$f"
-    fi
-  done
+  echo "allene update"
+  echo "Update all active local dependencies."
   exit 0
 fi
 
-# PACKAGE_LOCK_PATH="./package-lock.json"
+if [ -z "$ALLENE_PACMAN_CLI" ]; then
+  ALLENE_PACMAN_CLI="npm"
+fi
 
+get_pkg_info() {
+  pkg="$1"
+  #echo "pkg: $pkg" >/dev/stderr
+  pkg_info='{}'
+  if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
+    pkg_info=$(yarn info --json "$pkg" | jq -r '.data')
+  else
+    pkg_info=$(npm info --json "$pkg")
+  fi
+  echo "$pkg_info"
+}
+
+# TODO: do this, but select the most recent version for each package, whether
+# from what's in packages/node_modules/... or from ./package.json.
+# Does collect-dependencies already do this?
 #bash ./collect-dependencies
-touch ./package-lock.json
-rm ./package-lock.json
-npm install
-npm update
-#if [ ! -e "$PACKAGE_LOCK_PATH" ]; then
-#  echo "Creating a package-lock.json"
-#  npm i --package-lock-only
-#fi
-npm audit fix
+
+touch yarn.lock package-lock.json
+rm yarn.lock package-lock.json
+eval "$ALLENE_PACMAN_CLI install"
+if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
+  yarn upgrade
+  # TODO: yarn upgrade doesn't update package.json
+  # See issue https://github.com/yarnpkg/yarn/issues/3266
+  #yarn upgrade-interactive
+  # I think the following will just upgrade package.json to the latest version:
+  #jq '.dependencies | keys | .[]' package.json | xargs yarn add
+else
+  npm update
+fi
+
+if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
+  yarn audit
+  echo "Notice: there is no yarn equivalent to 'npm audit fix'. See https://github.com/yarnpkg/yarn/issues/7075" 1>&2
+else
+  npm audit fix
+fi
 
 package_json_paths=$(ls -1 packages/node_modules/!(available)/**/package.json)
 
 names=$(jq -sr '.[] | .name' local-packages.json)
 
 package_json_path="./package.json"
-lockfile_path="./package-lock.json"
-
+#lockfile_path="./package-lock.json"
 #third_party_dependencies=$(jq '(.dependencies // {}) | to_entries | reduce .[] as $item ({}; .[$item.key] |= $item.value.version)' $lockfile_path)
 third_party_dependencies=$(jq '(.dependencies // {})' $package_json_path)
 
@@ -137,7 +160,7 @@ for pkg in $names; do
   child_package_json_tmp_path="./packages/node_modules/$pkg/package_tmp.json"
   updated_ds_path="./packages/node_modules/$pkg/updated_ds.json"
 
-  latest_published_version=$(npm search "$pkg" -json | jq '.[0].version')
+  latest_published_version=$(get_pkg_info "$pkg" | jq '.versions | last')
   package_json_version=$(jq '.version' "$child_package_json_path")
   if [ "$latest_published_version" != "$package_json_version" ]; then
     error_exit "Latest published version: $latest_published_version vs. package.json version: $package_json_version"
@@ -177,8 +200,6 @@ for pkg in $names; do
     rm "$updated_ds_path"
   fi
 
-  echo "$pkg: updating package-lock.json"
-
   child_dir="./packages/node_modules/$pkg"
 
   cd "$child_dir" || error_exit "Error: 'cd \"$child_dir\"' failed."
@@ -189,26 +210,33 @@ for pkg in $names; do
 
   #git status -s
 
-  if [ -f ./package-lock.json ]; then
-    mv ./package-lock.json ./package-lock-lkg.json
+  echo "$pkg: updating lockfile and building"
+  touch yarn.lock package-lock.json
+  rm yarn.lock package-lock.json
+  if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
+    # NOTE: yarn generate-lock-entry isn't correct
+    # See issue https://github.com/yarnpkg/yarn/issues/2340
+    yarn install --modules-folder "$START_DIR"/node_modules
+  else
+    npm install --package-lock-only
+    npm run --silent build || error_exit \
+      "Error: 'npm run --silent build' failed for $pkg. Remove '--silent' to debug."
   fi
-  touch ./package-lock-lkg.json
-  npm install --package-lock-only
-  rm ./package-lock-lkg.json
-
-  echo "$pkg: building"
-  npm run --silent build || error_exit \
-    "Error: 'npm run --silent build' failed for $pkg. Remove '--silent' to debug."
+#  # Re-enable the following when yarn generate-lock-entry is fixed:
+#  "$ALLENE_PACMAN_CLI" run --silent build || error_exit \
+#    "Error: '$ALLENE_PACMAN_CLI run --silent build' failed for $pkg. Remove '--silent' to debug."
 
   echo "$pkg: testing"
-  npm run --silent test || error_exit \
-    "Error: 'npm run --silent test' failed for $pkg. Remove '--silent' to debug."
+  "$ALLENE_PACMAN_CLI" run --silent test || error_exit \
+    "Error: '$ALLENE_PACMAN_CLI run --silent test' failed for $pkg. Remove '--silent' to debug."
 
   cd "$START_DIR" || error_exit "Error: 'cd \"$START_DIR\"' failed."
 done
 
-if ! npm audit; then
-  echo 'You can try to force the fixes, but be ready to address breaking changes:'
-  echo '  npm audit fix --force'
+if ! "$ALLENE_PACMAN_CLI" audit; then
+  if [ "$ALLENE_PACMAN_CLI" == "npm" ]; then
+    echo 'You can try to force the fixes, but be ready to address breaking changes:'
+    echo "  $ALLENE_PACMAN_CLI audit fix --force"
+  fi
 fi
-npm outdated || echo "TODO: update dependencies manually."
+"$ALLENE_PACMAN_CLI" outdated || echo "TODO: update dependencies manually."

@@ -14,7 +14,6 @@ on_error() {
 }
 cleanup_complete=0
 cleanup() {
-  echo 'Cleaning up...'
   cd "$START_DIR" || return
   cleanup_complete=1
 }
@@ -60,11 +59,7 @@ if [ -z "$ALLENE_PACMAN_CLI" ]; then
 fi
 
 if [ ! -e "$ALLE_PKG_JSON_PATH" ]; then
-  echo "Missing alle top-level package.json"
-  #error_exit "Missing alle top-level package.json"
-  # TODO: do we instead want to npm init or provide a minimal placeholder?
-  #npm init
-  echo '{"dependencies": {}}' >"$ALLE_PKG_JSON_PATH"
+  error_exit "Missing alle top-level package.json"
 fi
 
 cp "$ALLE_PKG_JSON_PATH" "$ALLE_PKG_JSON_LKG_PATH"

@@ -9,7 +9,6 @@ on_error() {
 }
 cleanup_complete=0
 cleanup() {
-  echo 'Cleaning up...'
   cd "$START_DIR" || return
   cleanup_complete=1
 }
@@ -60,6 +59,16 @@ if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
   exit 0
 fi
 
+if [ -z "$ALLENE_PACMAN_CLI" ]; then
+  if yarn --version > /dev/null 2>&1; then
+    ALLENE_PACMAN_CLI="yarn"
+  else
+    ALLENE_PACMAN_CLI="npm"
+  fi
+  export ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI"
+fi
+echo "allene is using $ALLENE_PACMAN_CLI"
+
 allene_cmd="$1"
 
 if [ ! -x "$SCRIPT_DIR"/src/"$allene_cmd" ]; then
@@ -73,5 +82,4 @@ if [ ! -x "$SCRIPT_DIR"/src/"$allene_cmd" ]; then
 fi
 
 #eval "$SCRIPT_DIR"/src/"$allene_cmd" "$@"
-echo "$SCRIPT_DIR/src/$*"
 eval "\"$SCRIPT_DIR/src/\"$*"

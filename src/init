@@ -9,11 +9,6 @@ START_DIR=$(pwd)
 ###################
 PEER_DEPENDENCIES_BY_DEPENDENT_F="$START_DIR"/peer-dependencies-by-dependent.json
 PEER_DEPENDENTS_BY_DEPENDENCY_F="$START_DIR"/peer-dependents-by-dependency.json
-if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
-  username=$(yarn login --json | jq -r '.data | capture("npm\\ username:\\ (?<username>.+)") | .username')
-else
-  username=$(npm whoami)
-fi
 on_error() {
   if [ -e "$PEER_DEPENDENCIES_BY_DEPENDENT_F" ]; then
     rm "$PEER_DEPENDENCIES_BY_DEPENDENT_F"
@@ -21,7 +16,6 @@ on_error() {
 }
 cleanup_complete=0
 cleanup() {
-  echo 'Cleaning up...'
   cd "$START_DIR" || return
   if [ -e "$PEER_DEPENDENTS_BY_DEPENDENCY_F" ]; then
     rm "$PEER_DEPENDENTS_BY_DEPENDENCY_F"
@@ -65,24 +59,14 @@ trap cleanup EXIT INT QUIT TERM
 shopt -s globstar
 shopt -s extglob
 
-if [ -z "$ALLENE_PACMAN_CLI" ]; then
-  if yarn --version > /dev/null 2>&1; then
-    ALLENE_PACMAN_CLI="yarn"
-  else
-    ALLENE_PACMAN_CLI="npm"
-  fi
-  echo "Using $ALLENE_PACMAN_CLI"
-  export ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI"
+if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
+  echo "allene init <pkg>"
+  echo "Create an alle structure for the specified package"
+  exit 0
 fi
 
-if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
-  echo "allene commands:"
-  for f in "$SCRIPT_DIR"/src/*; do
-    if [ -x "$f" ]; then
-      basename "$f"
-    fi
-  done
-  exit 0
+if [ -z "$ALLENE_PACMAN_CLI" ]; then
+  ALLENE_PACMAN_CLI="npm"
 fi
 
 # from https://stackoverflow.com/a/8574392
@@ -137,14 +121,30 @@ get_my_deps() {
 }
 
 pkg_in="$1"
-username="$(whoami)"
+username=""
+if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
+  username=$(yarn login --json | jq -r '.data | capture("npm\\ username:\\ (?<username>.+)") | .username')
+else
+  username=$(npm whoami)
+fi
+
+if [[ -z "$username" ]]; then
+  error_exit "Please log in: $ALLENE_PACMAN_CLI login"
+fi
 
 if ! jq --version >/dev/null 2>&1; then
   error_exit "Install jq"
 fi
 
-if [[ -z "$username" ]]; then
-  error_exit "Please log in: $ALLENE_PACMAN_CLI login"
+if [ ! -e ./package.json ]; then
+  cat >package.json <<END
+{
+  "name": "$pkg_in-alle",
+  "private": true,
+  "version": "0.0.0",
+  "dependencies": {}
+}
+END
 fi
 
 if [ ! -e ./local-packages.json ]; then
@@ -192,9 +192,7 @@ detect_peer_dependencies() {
     "$PEER_DEPENDENTS_BY_DEPENDENCY_F" > "$PEER_DEPENDENCIES_BY_DEPENDENT_F"
   rm "$PEER_DEPENDENTS_BY_DEPENDENCY_F"
 }
-#detect_peer_dependencies
 (detect_peer_dependencies &)
-#nohup detect_peer_dependencies &
 
 echo "installing..."
 eval "$ALLENE_PACMAN_CLI install"
@@ -214,7 +212,7 @@ done
 build_packages() {
   echo "building packages..."
   cd "$START_DIR" || error_exit "Cannot cd to $START_DIR"
-  remaining_package_json_paths=$(ls -1 tmp/packages/node_modules/!(available)/**/package.json)
+  remaining_package_json_paths=$(ls -1 tmp/packages/node_modules/!(available)/**/package.json 2>/dev/null)
   if [ -z "$remaining_package_json_paths" ]; then
     return
   fi
@@ -231,7 +229,7 @@ build_packages() {
     mv "./tmp/$dir_path" "$dir_path"
     cd "$dir_path" || error_exit "Cannot cd to $dir_path"
     jq -r '.name' package.json >> "$START_DIR"/mydeps.tsv
-    pwd
+    my_dep_tree
     eval "$ALLENE_PACMAN_CLI run build"
     cd "$START_DIR" || error_exit "Cannot cd to $START_DIR"
   done
