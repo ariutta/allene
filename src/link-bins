@@ -132,17 +132,17 @@ fi
 
 package_json_paths=$(ls -1 packages/node_modules/!(available)/**/package.json)
 
-# create symlinks for local command line tools
+# create symlinks for command line tools of my packages
 for pkg_f in $package_json_paths; do
-  local_dir=$(dirname "$pkg_f")
-  cd "$local_dir" || error_exit "Failed to cd into $local_dir"
+  pkg_dir=$(dirname "$pkg_f")
+  cd "$pkg_dir" || error_exit "Failed to cd into $pkg_dir"
   if [ ! -d node_modules ]; then
     mkdir node_modules
   fi
   if [ ! -d node_modules/.bin ]; then
     ln -s "$BIN_DIR" node_modules/.bin
   fi
-  #(cd node_modules || error_exit "Failed to cd into $local_dir/node_modules"; ln -s "$BIN_DIR" .bin)
+  #(cd node_modules || error_exit "Failed to cd into $pkg_dir/node_modules"; ln -s "$BIN_DIR" .bin)
   if [ -d bin ]; then
     cd bin || exit 1
     source_dir="$(pwd)"
@@ -155,8 +155,8 @@ for pkg_f in $package_json_paths; do
       fi
       if [ -x "$source_path" ] && [ ! -e "$filename" ]; then
         # the source is executable and the destination doesn't already exist
-        #echo "ln -s ../../../\"$local_dir/bin/$filename\" \"$filename\""
-        eval "ln -s ../../../\"$local_dir/bin/$filename\" \"$filename\""
+        #echo "ln -s ../../../\"$pkg_dir/bin/$filename\" \"$filename\""
+        eval "ln -s ../../../\"$pkg_dir/bin/$filename\" \"$filename\""
       fi
     done
   fi

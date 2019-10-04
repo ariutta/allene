@@ -147,31 +147,31 @@ if [ ! -e ./package.json ]; then
 END
 fi
 
-if [ ! -e ./local-packages.json ]; then
+if [ ! -e ./my-packages.json ]; then
   repo_url=$(get_pkg_info "$pkg_in" | jq -r '.repository.url | capture("\\.com\\/(?<user>([\\w\\-]+))\\/(?<repo>([\\w\\-]+))") | "git@github.com:\(.user)/\(.repo).git"')
-  echo "{\"name\": \"$pkg_in\", \"repository\": \"$repo_url\"}" >> ./local-packages.json
+  echo "{\"name\": \"$pkg_in\", \"repository\": \"$repo_url\"}" >> ./my-packages.json
   for dep in $(get_my_deps "$username" "$pkg_in"); do
     repo_url=$(get_pkg_info "$dep" | jq -r '.repository.url | capture("\\.com\\/(?<user>([\\w\\-]+))\\/(?<repo>([\\w\\-]+))") | "git@github.com:\(.user)/\(.repo).git"')
-    echo "{\"name\": \"$dep\", \"repository\": \"$repo_url\"}" | cat - ./local-packages.json > temp && mv temp ./local-packages.json
+    echo "{\"name\": \"$dep\", \"repository\": \"$repo_url\"}" | cat - ./my-packages.json > temp && mv temp ./my-packages.json
   done
 fi
 
-if [ -e ./local-packages.json ] && [ ! -d packages/node_modules ]; then
-  # Make directories for the local packages
-  jq -sr '.[] | "mkdir -p ./packages/node_modules/\(.name)"' "./local-packages.json" |
+if [ -e ./my-packages.json ] && [ ! -d packages/node_modules ]; then
+  # Make directories for my packages
+  jq -sr '.[] | "mkdir -p ./packages/node_modules/\(.name)"' "./my-packages.json" |
     while read -r cmd; do
       $cmd
     done
 
-  # Clone the local packages
-  jq -sr '.[] | "git clone \(.repository) ./packages/node_modules/\(.name)"' "./local-packages.json" |
+  # Clone my packages
+  jq -sr '.[] | "git clone \(.repository) ./packages/node_modules/\(.name)"' "./my-packages.json" |
     while read -r cmd; do
       $cmd
     done
 fi
 
 echo "collecting dependencies..."
-"$SCRIPT_DIR"/collect-dependencies
+ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI" "$SCRIPT_DIR"/collect-dependencies
 
 detect_peer_dependencies() {
   if [ -e "$PEER_DEPENDENCIES_BY_DEPENDENT_F" ]; then
@@ -197,7 +197,7 @@ detect_peer_dependencies() {
 echo "installing..."
 eval "$ALLENE_PACMAN_CLI install"
 echo "linking bins..."
-"$SCRIPT_DIR"/link-bins
+ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI" "$SCRIPT_DIR"/link-bins
 echo "building..."
 
 package_json_paths=$(ls -1 packages/node_modules/!(available)/**/package.json)
@@ -221,8 +221,8 @@ build_packages() {
       continue
     fi
     remaining_package_json_paths=$(ls -1 tmp/packages/node_modules/!(available)/**/package.json)
-    local_dependencies=$(comm -12  <(jq -r '(.dependencies // {}) + (.peerDependencies // {}) | keys | .[]' "./tmp/$pkg_f" | sort -u) <(jq -r '.name' $remaining_package_json_paths | sort -u))
-    if [ -n "$local_dependencies" ]; then
+    my_dependencies=$(comm -12  <(jq -r '(.dependencies // {}) + (.peerDependencies // {}) | keys | .[]' "./tmp/$pkg_f" | sort -u) <(jq -r '.name' $remaining_package_json_paths | sort -u))
+    if [ -n "$my_dependencies" ]; then
       continue
     fi
     dir_path=$(dirname "$pkg_f")
@@ -240,4 +240,4 @@ touch "$START_DIR"/mydeps.tsv
 rm "$START_DIR"/mydeps.tsv
 build_packages
 rm -rf ./tmp
-"$SCRIPT_DIR"/each "$ALLENE_PACMAN_CLI run build"
+ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI" "$SCRIPT_DIR"/each "$ALLENE_PACMAN_CLI run build"

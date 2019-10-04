@@ -80,7 +80,7 @@ get_pkg_info() {
   echo "$pkg_info"
 }
 
-names=$(jq -sr '.[] | .name' local-packages.json)
+names=$(jq -sr '.[] | .name' my-packages.json)
 
 if [ ! -e "$PEER_DEPENDENCIES_BY_DEPENDENT_F" ]; then
   echo "Detecting peer dependencies. May be slow the first time but will be cached for future runs."

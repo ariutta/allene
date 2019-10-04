@@ -64,7 +64,7 @@ if [[ -z "$*" ]]; then
   exit 1
 fi
 
-for name in $(jq -sr 'map(.name) | .[]' "./local-packages.json"); do
+for name in $(jq -sr 'map(.name) | .[]' "./my-packages.json"); do
   cd "$START_DIR" || exit 1
   echo ""
   echo "***********************************"

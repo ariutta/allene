@@ -65,7 +65,8 @@ if [ -z "$ALLENE_PACMAN_CLI" ]; then
   else
     ALLENE_PACMAN_CLI="npm"
   fi
-  export ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI"
+  ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI"
+  #export ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI"
 fi
 echo "allene is using $ALLENE_PACMAN_CLI"
 
@@ -81,5 +82,4 @@ if [ ! -x "$SCRIPT_DIR"/src/"$allene_cmd" ]; then
   error_exit "Invalid command: $allene_cmd"
 fi
 
-#eval "$SCRIPT_DIR"/src/"$allene_cmd" "$@"
-eval "\"$SCRIPT_DIR/src/\"$*"
+eval "ALLENE_PACMAN_CLI=\"$ALLENE_PACMAN_CLI\" \"$SCRIPT_DIR/src/\"$*"

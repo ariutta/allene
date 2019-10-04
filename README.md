@@ -7,9 +7,15 @@ multiple related projects in sync. Allene is a tool that makes it easy to:
 - update dependencies
 - find unused dependencies
 
+## Install
+
+1. Install dependencies: bash, sed, jq, Node.js, NPM or Yarn
+2. `git clone https://github.com/ariutta/allene.git`
+3. `export PATH="allene:$PATH"`
+
 ## Usage
 
-1. Login: `npm login`
+1. Login: `npm login` or `yarn login`
 2. Create project directory: `mkdir <your-package-name>-alle; cd <your-package-name>-alle`
 3. Create alle-inspired project structure for your package:
    `allene init '<your-package-name>'`
@@ -18,8 +24,9 @@ multiple related projects in sync. Allene is a tool that makes it easy to:
 
 Run `allene --help` to see all available commands.
 
-You can `yarn` instead of `npm` by setting the `ALLENE_PACMAN_CLI` env var:
-`export ALLENE_PACMAN_CLI="yarn"`
+If you have `yarn` installed, `allene` will use it instead of `npm`.
+You can override this by setting the `ALLENE_PACMAN_CLI` env var:
+`export ALLENE_PACMAN_CLI="npm"`
 
 Example: setup an alle project structure for package `@wikipathways/pvjs` as a
 member of the Pvjs team, using `npm` as package manager tool:
@@ -27,9 +34,9 @@ member of the Pvjs team, using `npm` as package manager tool:
 1. Login: `npm login`
 2. Create project directory: `mkdir pvjs-alle; cd pvjs-alle`
 3. Create alle-inspired project structure for package `@wikipathways/pvjs`:
-   `ALLENE_PACMAN_CLI="npm"; ../allene/allene init '@wikipathways/pvjs'`
-4. Update: `ALLENE_PACMAN_CLI="npm"; ../allene/allene update`
-5. Find unused dependencies: `../allene/allene depcheck`
+   `ALLENE_PACMAN_CLI="npm"; ../../allene/allene init '@wikipathways/pvjs'`
+4. Update: `ALLENE_PACMAN_CLI="npm"; ../../allene/allene update`
+5. Find unused dependencies: `../../allene/allene depcheck`
 
 ## Sync mynixpkgs
 

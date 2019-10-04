@@ -51,7 +51,7 @@ shopt -s extglob
 
 if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
   echo "allene update"
-  echo "Update all active local dependencies."
+  echo "Update all my enabled dependencies (excluding those in 'available')."
   exit 0
 fi
 
@@ -71,21 +71,24 @@ get_pkg_info() {
   echo "$pkg_info"
 }
 
-# TODO: do this, but select the most recent version for each package, whether
-# from what's in packages/node_modules/... or from ./package.json.
-# Does collect-dependencies already do this?
-#bash ./collect-dependencies
+# TODO: Fix collect-dependencies to check whether top-level package.json exists,
+# and, if so, only overwrite if my package's dependency is more newer.
+# We don't want to pull up a bunch of outdated version numbers.
+#ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI" "$SCRIPT_DIR"/collect-dependencies
 
 touch yarn.lock package-lock.json
 rm yarn.lock package-lock.json
 eval "$ALLENE_PACMAN_CLI install"
 if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
-  yarn upgrade
+  #yarn upgrade
   # TODO: yarn upgrade doesn't update package.json
   # See issue https://github.com/yarnpkg/yarn/issues/3266
-  #yarn upgrade-interactive
-  # I think the following will just upgrade package.json to the latest version:
+
+  # This will just upgrade package.json to the latest version, ignoring semver:
   #jq '.dependencies | keys | .[]' package.json | xargs yarn add
+
+  # This allows the user to choose and at least sometimes updates package.json
+  yarn upgrade-interactive
 else
   npm update
 fi
@@ -99,7 +102,7 @@ fi
 
 package_json_paths=$(ls -1 packages/node_modules/!(available)/**/package.json)
 
-names=$(jq -sr '.[] | .name' local-packages.json)
+names=$(jq -sr '.[] | .name' my-packages.json)
 
 package_json_path="./package.json"
 #lockfile_path="./package-lock.json"
@@ -119,8 +122,8 @@ third_party_dependencies=$(jq '(.dependencies // {})' $package_json_path)
 #	cd "$START_DIR" || error_exit "Error: 'cd \"$START_DIR\"' failed."
 #done
 
-# alle_dependencies: all packages, both local and third-party, for this project.
-# Includes the version number of each package. For local packages, uses version
+# alle_dependencies: all packages, both mine and third-party, for this project.
+# Includes the version number of each package. For my packages, uses version
 # number specified locally in packages/node_modules/<pkg>/package.json.
 alle_dependencies=$(jq --slurp \
   --argjson third_party_dependencies "$third_party_dependencies" \

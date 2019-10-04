@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# TODO: check whether we're selecting the most recent version for each package,
+# whether from what's in packages/node_modules/... or from ./package.json.
+# We don't want to pull up a bunch of outdated version numbers.
+
 ALLE_PKG_JSON_PATH="./package.json"
 ALLE_PKG_JSON_LKG_PATH="/tmp/package.lkg.json"
 ALLE_PKG_JSON_UPDATED_PATH="/tmp/package.updated.json"
