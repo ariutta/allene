@@ -64,11 +64,13 @@ if [[ -z "$*" ]]; then
   exit 1
 fi
 
-for name in $(jq -sr 'map(.name) | .[]' "./my-packages.json"); do
-  cd "$START_DIR" || exit 1
-  echo ""
-  echo "***********************************"
-  echo "$name"
-  echo "***********************************"
-  (cd ./packages/node_modules/"$name" || exit 1 && eval "$@") || break
-done
+if [ -e pkg_batches.json ]; then
+  for batch in $(jq -r 'map(join("|")) | .[]' pkg_batches.json); do
+    echo "$batch" | \
+      jq -Rr 'split("|") | map("\(.)\n") | .[]' | \
+      xargs -n 1 -P 4 -i{} sh -c "(cd ./packages/node_modules/\"{}\" || exit 1 && eval \"$*\") || break"
+  done
+else
+  jq -sr 'map(.name) | .[]' my-packages.json | \
+    xargs -n 1 -P 4 -i{} sh -c "(cd ./packages/node_modules/\"{}\" || exit 1 && eval \"$*\") || break"
+fi

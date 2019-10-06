@@ -15,13 +15,13 @@ on_error() {
     rm "$PEER_DEPENDENCIES_BY_DEPENDENT_F"
   fi
 }
-cleanup_complete=0
+cleanup_complete_utils=0
 cleanup() {
   cd "$START_DIR" || return
   if [ -e "$PEER_DEPENDENTS_BY_DEPENDENCY_F" ]; then
     rm "$PEER_DEPENDENTS_BY_DEPENDENCY_F"
   fi
-  cleanup_complete=1
+  cleanup_complete_utils=1
 }
 # Based on http://linuxcommand.org/lc3_wss0140.php
 # and https://codeinthehole.com/tips/bash-error-reporting/
@@ -50,7 +50,7 @@ error_exit() {
   # TODO: should error_exit call cleanup?
   #       The EXIT trap already calls cleanup, so
   #       calling it here means calling it twice.
-  if [ ! $cleanup_complete ]; then
+  if [ ! $cleanup_complete_utils ]; then
     cleanup
   fi
   exit 1
