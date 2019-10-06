@@ -4,6 +4,7 @@
 get_script_dir() { echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; }
 SCRIPT_DIR=$(get_script_dir)
 START_DIR=$(pwd)
+PKG_INFO_CACHE="$START_DIR"/.pkg_info_cache
 ###################
 # Custom variables
 ###################
@@ -19,6 +20,9 @@ cleanup() {
   cd "$START_DIR" || return
   if [ -e "$PEER_DEPENDENTS_BY_DEPENDENCY_F" ]; then
     rm "$PEER_DEPENDENTS_BY_DEPENDENCY_F"
+  fi
+  if [ -d "$PKG_INFO_CACHE" ]; then
+    rm -rf "$PKG_INFO_CACHE"
   fi
   cleanup_complete=1
 }
@@ -65,60 +69,9 @@ if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
   exit 0
 fi
 
-if [ -z "$ALLENE_PACMAN_CLI" ]; then
-  ALLENE_PACMAN_CLI="npm"
-fi
-
-# from https://stackoverflow.com/a/8574392
-contains_element () {
-  local e match="$1"
-  shift
-  for e; do [[ "$e" == "$match" ]] && return 0; done
-  return 1
-}
-
-get_pkg_info() {
-  pkg="$1"
-  #echo "pkg: $pkg" >/dev/stderr
-  pkg_info='{}'
-  if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
-    pkg_info=$(yarn info --json "$pkg" | jq -r '.data')
-  else
-    pkg_info=$(npm info --json "$pkg")
-  fi
-  echo "$pkg_info"
-}
-
-get_deps() {
-  pkg="$1"
-  for dep in $(get_pkg_info "$pkg" | jq -r '(.dependencies // {}) + (.devDependencies // {}) + (.peerDependencies // {}) | keys | .[]'); do
-    echo "$dep"
-  done
-}
-
-get_my_deps() {
-  username="$1"
-  pkg="$2"
-  collected="$3"
-  if [[ -z "$collected" ]]; then
-    collected=("$pkg")
-  fi
-  for dep in $(get_deps "$pkg"); do
-    maintainers=''
-    if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
-      maintainers=$(yarn info --json "$dep" | jq -r '.data.maintainers[].name')
-    else
-      maintainers=$(npm info --json "$dep" | jq -r '.maintainers[] | capture("^(?<name>([\\w\\-]+))\\ <(?<email>(.*))>") | .name')
-    fi
-    if echo "$maintainers" | rg -q "^$username\$"; then
-      if ! contains_element "$dep" "${collected[@]}"; then
-        echo "$dep"
-        collected+=( "$dep" )
-        get_my_deps "$username" "$dep" "${collected[@]}"
-      fi
-    fi
-  done
-}
+# shellcheck source=utils.sh
+. "$SCRIPT_DIR"/utils.sh || error_exit "Failed to source utils.sh"
+[ -z "$ALLENE_PACMAN_CLI" ] && error_exit "ALLENE_PACMAN_CLI not set"
 
 pkg_in="$1"
 username=""
@@ -128,13 +81,7 @@ else
   username=$(npm whoami)
 fi
 
-if [[ -z "$username" ]]; then
-  error_exit "Please log in: $ALLENE_PACMAN_CLI login"
-fi
-
-if ! jq --version >/dev/null 2>&1; then
-  error_exit "Install jq"
-fi
+[ -z "$username" ] && error_exit "Please log in: $ALLENE_PACMAN_CLI login"
 
 if [ ! -e ./package.json ]; then
   cat >package.json <<END
@@ -147,97 +94,121 @@ if [ ! -e ./package.json ]; then
 END
 fi
 
+echo "creating my-packages.json..." 1>&2
 if [ ! -e ./my-packages.json ]; then
-  repo_url=$(get_pkg_info "$pkg_in" | jq -r '.repository.url | capture("\\.com\\/(?<user>([\\w\\-]+))\\/(?<repo>([\\w\\-]+))") | "git@github.com:\(.user)/\(.repo).git"')
+  echo "processing $pkg_in for my-packages.json..." 1>&2
+  repo_url=$(get_pkg_info "$pkg_in" |
+    jq -r '.repository.url |
+    capture("\\.com\\/(?<user>([\\w\\-]+))\\/(?<repo>([\\w\\-]+))") |
+    "git@github.com:\(.user)/\(.repo).git"'
+  )
   echo "{\"name\": \"$pkg_in\", \"repository\": \"$repo_url\"}" >> ./my-packages.json
+  echo "detecting $pkg_in deps developed/maintained by $username..." 1>&2
   for dep in $(get_my_deps "$username" "$pkg_in"); do
-    repo_url=$(get_pkg_info "$dep" | jq -r '.repository.url | capture("\\.com\\/(?<user>([\\w\\-]+))\\/(?<repo>([\\w\\-]+))") | "git@github.com:\(.user)/\(.repo).git"')
-    echo "{\"name\": \"$dep\", \"repository\": \"$repo_url\"}" | cat - ./my-packages.json > temp && mv temp ./my-packages.json
+    echo "processing $dep for my-packages.json..." 1>&2
+    repo_url=$(get_pkg_info "$dep" |
+      jq -r '.repository.url |
+      capture("\\.com\\/(?<user>([\\w\\-]+))\\/(?<repo>([\\w\\-]+))") |
+      "git@github.com:\(.user)/\(.repo).git"'
+    )
+    echo "{\"name\": \"$dep\", \"repository\": \"$repo_url\"}" |
+      cat - ./my-packages.json > temp &&
+      mv temp ./my-packages.json
   done
 fi
 
 if [ -e ./my-packages.json ] && [ ! -d packages/node_modules ]; then
-  # Make directories for my packages
-  jq -sr '.[] | "mkdir -p ./packages/node_modules/\(.name)"' "./my-packages.json" |
-    while read -r cmd; do
-      $cmd
-    done
+  echo "making directories for my packages..." 1>&2
+  jq -sr '.[] | "mkdir -p ./packages/node_modules/\(.name)" | @sh' "./my-packages.json" | \
+    xargs -n 1 -P 4 -i{} sh -c "{}"
+#  jq -sr '.[] | "mkdir -p ./packages/node_modules/\(.name)"' "./my-packages.json" |
+#    while read -r cmd; do
+#      $cmd
+#    done
 
-  # Clone my packages
-  jq -sr '.[] | "git clone \(.repository) ./packages/node_modules/\(.name)"' "./my-packages.json" |
-    while read -r cmd; do
-      $cmd
-    done
+  echo "cloning my packages..." 1>&2
+  jq -sr '.[] | "git clone \(.repository) ./packages/node_modules/\(.name)" | @sh' "./my-packages.json" | \
+    xargs -n 1 -P 4 -i{} sh -c "{}"
+#  jq -sr '.[] | "git clone \(.repository) ./packages/node_modules/\(.name)"' "./my-packages.json" |
+#    while read -r cmd; do
+#      $cmd
+#    done
 fi
 
-echo "collecting dependencies..."
+echo "collecting dependencies..." 1>&2
 ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI" "$SCRIPT_DIR"/collect-dependencies
 
-detect_peer_dependencies() {
-  if [ -e "$PEER_DEPENDENCIES_BY_DEPENDENT_F" ]; then
-    rm "$PEER_DEPENDENCIES_BY_DEPENDENT_F"
-  fi
-  if [ -e "$PEER_DEPENDENTS_BY_DEPENDENCY_F" ]; then
-    rm "$PEER_DEPENDENTS_BY_DEPENDENCY_F"
-  fi
-  echo "Detecting peer dependencies." >/dev/stderr
-
-  for caret_versioned_pkg in $(jq -r '.dependencies | to_entries | map("\(.key)@\(.value)") | .[]' package.json); do
-    pkg=${caret_versioned_pkg//\^/''}
-    get_pkg_info "$pkg" | jq 'select(.peerDependencies) | {(.name): .peerDependencies | keys}' \
-      >>"$PEER_DEPENDENTS_BY_DEPENDENCY_F" || break;
-  done
-
-  jq -s 'reduce .[] as $item({}; . * $item) | to_entries | map(select(.value | length > 0)) | map(.key as $mykey | reduce .value[] as $myvalue ({}; . * {($myvalue): [$mykey]})) | map(to_entries) | reduce .[] as $item ([]; . + $item) | reduce .[] as $item ({}; .[$item["key"]] += $item["value"])' \
-    "$PEER_DEPENDENTS_BY_DEPENDENCY_F" > "$PEER_DEPENDENCIES_BY_DEPENDENT_F"
-  rm "$PEER_DEPENDENTS_BY_DEPENDENCY_F"
-}
+echo "Detecting peer dependencies (background task)" 1>&2
 (detect_peer_dependencies &)
 
-echo "installing..."
+echo "installing..." 1>&2
 eval "$ALLENE_PACMAN_CLI install"
-echo "linking bins..."
+echo "linking bins..." 1>&2
 ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI" "$SCRIPT_DIR"/link-bins
-echo "building..."
+echo "building..." 1>&2
 
-package_json_paths=$(ls -1 packages/node_modules/!(available)/**/package.json)
+if [ ! -e pkg_batches.json ]; then
+  echo "detecting package batches..." 1>&2
+  jq -s 'map(.name) | .[]' $(get_pkg_json_paths) >my_pkgs.json
+  if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
+    echo "TODO: get reqs_by_dep via yarn" 1>&2
+    npm install --package-lock-only
+  fi
+  reqs_by_dep=$(jq --slurpfile my_pkgs my_pkgs.json \
+    'walk(
+      if type == "object" then
+        (
+          to_entries |
+          map(select(
+            ([.key] - ($my_pkgs + ["dependencies", "requires"])) | first | not
+          )) |
+          from_entries
+        )
+      else
+        .
+      end
+    ) |
+    .dependencies |
+    to_entries |
+    map({
+      (.key): (
+        if (.value | has("requires")) then
+          (.value.requires | keys)
+        else
+          []
+        end
+      )
+    })' \
+    package-lock.json)
 
-for pkg_f in $package_json_paths; do
+  if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
+    rm package-lock.json
+  fi
+
+  rm my_pkgs.json
+
+  get_pkg_batches "$reqs_by_dep" > pkg_batches.json
+fi
+
+echo "building packages..." 1>&2
+for pkg_f in $(get_pkg_json_paths); do
   dir_path=$(dirname "$pkg_f")
-  echo "$dir_path"
+  echo "$dir_path" 1>&2
   mkdir -p "$(dirname "./tmp/$dir_path")"
   mv "$dir_path" ./tmp/"$dir_path"
 done
 
-build_packages() {
-  echo "building packages..."
-  cd "$START_DIR" || error_exit "Cannot cd to $START_DIR"
-  remaining_package_json_paths=$(ls -1 tmp/packages/node_modules/!(available)/**/package.json 2>/dev/null)
-  if [ -z "$remaining_package_json_paths" ]; then
-    return
-  fi
-  for pkg_f in $package_json_paths; do
-    if [ ! -e "./tmp/$pkg_f" ]; then
-      continue
-    fi
-    remaining_package_json_paths=$(ls -1 tmp/packages/node_modules/!(available)/**/package.json)
-    my_dependencies=$(comm -12  <(jq -r '(.dependencies // {}) + (.peerDependencies // {}) | keys | .[]' "./tmp/$pkg_f" | sort -u) <(jq -r '.name' $remaining_package_json_paths | sort -u))
-    if [ -n "$my_dependencies" ]; then
-      continue
-    fi
-    dir_path=$(dirname "$pkg_f")
-    mv "./tmp/$dir_path" "$dir_path"
-    cd "$dir_path" || error_exit "Cannot cd to $dir_path"
-    jq -r '.name' package.json >> "$START_DIR"/mydeps.tsv
-    my_dep_tree
-    eval "$ALLENE_PACMAN_CLI run build"
-    cd "$START_DIR" || error_exit "Cannot cd to $START_DIR"
-  done
-  build_packages
-}
-
-touch "$START_DIR"/mydeps.tsv
-rm "$START_DIR"/mydeps.tsv
-build_packages
+for batch in $(jq -r 'map(join("|")) | .[]' pkg_batches.json); do
+  echo "$batch" | \
+    jq -Rr 'split("|") | map("\(.)\n") | .[]' | \
+    # TODO: how should -P be set? The machine won't necessarily have 4 cores/processors
+    xargs -n 1 -P 4 -i{} sh -c "echo \"building {}\" 1>&2; mv \"tmp/packages/node_modules/{}\" \"packages/node_modules/{}\" && cd \"packages/node_modules/{}\" && \"$ALLENE_PACMAN_CLI\" run build && cd \"$START_DIR\"" ||
+	error_exit "Failed to build"
+done
 rm -rf ./tmp
-ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI" "$SCRIPT_DIR"/each "$ALLENE_PACMAN_CLI run build"
+for batch in $(jq -r 'map(join("|")) | .[]' pkg_batches.json); do
+  echo "$batch" | \
+    jq -Rr 'split("|") | map("\(.)\n") | .[]' | \
+    xargs -n 1 -P 4 -i{} sh -c "echo \"rebuilding {}\" 1>&2; cd \"packages/node_modules/{}\" && \"$ALLENE_PACMAN_CLI\" run build && cd \"$START_DIR\"" ||
+	error_exit "Failed to rebuild"
+done

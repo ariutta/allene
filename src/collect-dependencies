@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
 
-# TODO: check whether we're selecting the most recent version for each package,
-# whether from what's in packages/node_modules/... or from ./package.json.
-# We don't want to pull up a bunch of outdated version numbers.
-
 ALLE_PKG_JSON_PATH="./package.json"
 ALLE_PKG_JSON_LKG_PATH="/tmp/package.lkg.json"
 ALLE_PKG_JSON_UPDATED_PATH="/tmp/package.updated.json"
@@ -58,26 +54,35 @@ trap cleanup EXIT INT QUIT TERM
 shopt -s globstar
 shopt -s extglob
 
-if [ -z "$ALLENE_PACMAN_CLI" ]; then
-  ALLENE_PACMAN_CLI="npm"
-fi
-
-if [ ! -e "$ALLE_PKG_JSON_PATH" ]; then
-  error_exit "Missing alle top-level package.json"
-fi
+# shellcheck source=utils.sh
+. "$SCRIPT_DIR"/utils.sh || error_exit "Failed to source utils.sh"
+[ -z "$ALLENE_PACMAN_CLI" ] && error_exit "ALLENE_PACMAN_CLI not set"
+[ ! -e "$ALLE_PKG_JSON_PATH" ] && error_exit "Missing alle top-level package.json"
 
 cp "$ALLE_PKG_JSON_PATH" "$ALLE_PKG_JSON_LKG_PATH"
 
-package_json_paths=$(ls -1 packages/node_modules/!(available)/**/package.json)
+my_pkgs_and_versions=$(jq -s \
+  'reduce .[] as $pkg_json ({}; . * ($pkg_json | {(.name): (.version)}))' \
+  $(get_pkg_json_paths))
 
-names=$(jq -s 'map(.name)' $package_json_paths)
+echo "My packages found:" 1>&2
+echo "$my_pkgs_and_versions" | jq -r 'keys | .[]' 1>&2
+#jq -sr 'map(.name) | .[]' $(get_pkg_json_paths) 1>&2
 
-echo "Local packages found:"
-echo "$names" | jq -r '.[]'
+top_level_pkgs_and_versions=$(jq \
+  '.dependencies // {}' \
+  $ALLE_PKG_JSON_PATH)
 
 QUERY=$(
   (sed 's/^\s*//g' | tr -d '\012') <<END
-map((.dependencies // {} | to_entries) + (.devDependencies // {} | to_entries)) |
+map(
+  (\$top_level_pkgs_and_versions | to_entries) +
+  (\$my_pkgs_and_versions | to_entries) +
+  (.dependencies // {} | to_entries) + 
+  (.dependencies // {} | to_entries) + 
+  (.peerDependencies // {} | to_entries) + 
+  (.devDependencies // {} | to_entries)
+) |
 flatten | group_by(.key) |
 map(reduce .[] as \$item ({key: "", semvers: []}; {
   key: \$item["key"],
@@ -116,21 +121,22 @@ map({
     join("")
   )
 }) |
-reduce .[] as \$item ({}; \$item * .) | . as \$mergedDependencies |
+reduce .[] as \$item ({}; \$item * .) | . as \$merged_deps |
 keys |
-reduce .[] as \$includeName ({}; {(\$includeName): \$mergedDependencies[\$includeName]} * .) | . as \$collectedDependencies
-| \$packageJson | .dependencies |= \$collectedDependencies
+reduce .[] as \$pkg_name ({}; {(\$pkg_name): \$merged_deps[\$pkg_name]} * .) | . as \$collected_deps
+| \$package_json | .dependencies |= \$collected_deps
 END
 )
 
-#keys - \$excludeNames |
-
-# Collect the latest versions of each dependency that is
-# not under development in this alle project and apply
-# the results to update the top-level alle package.json.
+# Collect the latest versions of each dependency along with my packages
+# and apply the results to update the top-level alle package.json.
 # In the capture section, we are extracting urls and semvers,
 # but we are not currently handling git references.
-jq -s --sort-keys --argjson excludeNames "$names" --argfile packageJson "$ALLE_PKG_JSON_PATH" \
+jq -s --sort-keys \
+  --argjson top_level_pkgs_and_versions "$top_level_pkgs_and_versions" \
+  --argjson my_pkgs_and_versions "$my_pkgs_and_versions" \
+  --argfile package_json "$ALLE_PKG_JSON_PATH" \
   "$QUERY" \
-  $package_json_paths >"$ALLE_PKG_JSON_UPDATED_PATH"
+  $(get_pkg_json_paths) >"$ALLE_PKG_JSON_UPDATED_PATH"
+
 mv "$ALLE_PKG_JSON_UPDATED_PATH" "$ALLE_PKG_JSON_PATH"

@@ -51,30 +51,15 @@ shopt -s extglob
 
 if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
   echo "allene update"
-  echo "Update all my enabled dependencies (excluding those in 'available')."
+  echo "Update all my enabled dependencies (excluding those in 'available' dirs)."
   exit 0
 fi
 
-if [ -z "$ALLENE_PACMAN_CLI" ]; then
-  ALLENE_PACMAN_CLI="npm"
-fi
+# shellcheck source=utils.sh
+. "$SCRIPT_DIR"/utils.sh || error_exit "Failed to source utils.sh"
+[ -z "$ALLENE_PACMAN_CLI" ] && error_exit "ALLENE_PACMAN_CLI not set"
 
-get_pkg_info() {
-  pkg="$1"
-  #echo "pkg: $pkg" >/dev/stderr
-  pkg_info='{}'
-  if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
-    pkg_info=$(yarn info --json "$pkg" | jq -r '.data')
-  else
-    pkg_info=$(npm info --json "$pkg")
-  fi
-  echo "$pkg_info"
-}
-
-# TODO: Fix collect-dependencies to check whether top-level package.json exists,
-# and, if so, only overwrite if my package's dependency is more newer.
-# We don't want to pull up a bunch of outdated version numbers.
-#ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI" "$SCRIPT_DIR"/collect-dependencies
+ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI" "$SCRIPT_DIR"/collect-dependencies
 
 touch yarn.lock package-lock.json
 rm yarn.lock package-lock.json
@@ -95,40 +80,14 @@ fi
 
 if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
   yarn audit
-  echo "Notice: there is no yarn equivalent to 'npm audit fix'. See https://github.com/yarnpkg/yarn/issues/7075" 1>&2
+  echo "Notice: there is no yarn equivalent to 'npm audit fix'.
+  See https://github.com/yarnpkg/yarn/issues/7075" 1>&2
 else
   npm audit fix
 fi
 
-package_json_paths=$(ls -1 packages/node_modules/!(available)/**/package.json)
-
-names=$(jq -sr '.[] | .name' my-packages.json)
-
-package_json_path="./package.json"
-#lockfile_path="./package-lock.json"
-#third_party_dependencies=$(jq '(.dependencies // {}) | to_entries | reduce .[] as $item ({}; .[$item.key] |= $item.value.version)' $lockfile_path)
-third_party_dependencies=$(jq '(.dependencies // {})' $package_json_path)
-
-#for pkg in $names; do
-#	echo "resetting package.json for $pkg..."
-#
-#	child_dir="./packages/node_modules/$pkg"
-#
-#	cd "$child_dir" || error_exit "Error: 'cd \"$child_dir\"' failed."
-#	if [ ! -f ./package.json ]; then
-#	  cp ./package.json ./package-lkg.json
-#	fi
-#	git checkout package.json
-#	cd "$START_DIR" || error_exit "Error: 'cd \"$START_DIR\"' failed."
-#done
-
-# alle_dependencies: all packages, both mine and third-party, for this project.
-# Includes the version number of each package. For my packages, uses version
-# number specified locally in packages/node_modules/<pkg>/package.json.
-alle_dependencies=$(jq --slurp \
-  --argjson third_party_dependencies "$third_party_dependencies" \
-  'reduce .[] as $item ($third_party_dependencies; .[$item.name] |= $item.version)' \
-  $package_json_paths)
+# all packages and direct dependencies for this project
+pkgs_and_versions=$(jq '.dependencies' package.json)
 
 QUERY=$(
   (sed 's/^\s*//g' | tr -d '\012') <<END
@@ -137,8 +96,8 @@ to_entries |
 map({
   "key": .key,
   "value": (
-    if (\$alle_dependencies[.key] != null) 
-    then \$alle_dependencies[.key] 
+    if (\$pkgs_and_versions[.key] != null) 
+    then \$pkgs_and_versions[.key] 
     else .value 
     end
   )
@@ -147,21 +106,21 @@ from_entries
 END
 )
 
-for pkg in $names; do
+for pkg in $(jq -sr '.[] | .name' my-packages.json); do
   cd "$START_DIR" || error_exit "Error: 'cd \"$START_DIR\"' failed."
 
-  echo "**********************************"
-  echo "* $pkg"
-  echo "**********************************"
+  echo "**********************************" 1>&2
+  echo "* $pkg" 1>&2
+  echo "**********************************" 1>&2
 
-  echo "$pkg: updating package.json"
+  echo "$pkg: updating package.json" 1>&2
 
   has_dependencies=$(jq 'has("dependencies")' ./packages/node_modules/"$pkg"/package.json)
   has_dev_dependencies=$(jq 'has("devDependencies")' ./packages/node_modules/"$pkg"/package.json)
 
   child_package_json_path="./packages/node_modules/$pkg/package.json"
   child_package_json_tmp_path="./packages/node_modules/$pkg/package_tmp.json"
-  updated_ds_path="./packages/node_modules/$pkg/updated_ds.json"
+  updated_deps_path="./packages/node_modules/$pkg/updated_deps.json"
 
   latest_published_version=$(get_pkg_info "$pkg" | jq '.versions | last')
   package_json_version=$(jq '.version' "$child_package_json_path")
@@ -175,32 +134,32 @@ for pkg in $names; do
   fi
 
   if [ "$has_dependencies" != 'true' ] && [ "$has_dev_dependencies" != 'true' ]; then
-    echo "$pkg has no deps."
+    echo "$pkg has no deps." 1>&2
     continue
   fi
 
   if [ "$has_dependencies" == 'true' ]; then
-    jq --arg dep_key 'dependencies' --argjson alle_dependencies "$alle_dependencies" \
+    jq --arg dep_key 'dependencies' --argjson pkgs_and_versions "$pkgs_and_versions" \
       "$QUERY" \
-      "$child_package_json_path" >"$updated_ds_path"
+      "$child_package_json_path" >"$updated_deps_path"
 
-    jq --slurpfile updated_ds "$updated_ds_path" \
-      '(.dependencies // {}) |= $updated_ds[0]' "$child_package_json_path" >"$child_package_json_tmp_path"
+    jq --slurpfile updated_deps "$updated_deps_path" \
+      '(.dependencies // {}) |= $updated_deps[0]' "$child_package_json_path" >"$child_package_json_tmp_path"
 
     mv "$child_package_json_tmp_path" "$child_package_json_path"
-    rm "$updated_ds_path"
+    rm "$updated_deps_path"
   fi
 
   if [ "$has_dev_dependencies" == 'true' ]; then
-    jq --arg dep_key 'devDependencies' --argjson alle_dependencies "$alle_dependencies" \
+    jq --arg dep_key 'devDependencies' --argjson pkgs_and_versions "$pkgs_and_versions" \
       "$QUERY" \
-      "$child_package_json_path" >"$updated_ds_path"
+      "$child_package_json_path" >"$updated_deps_path"
 
-    jq --slurpfile updated_ds "$updated_ds_path" \
-      '(.devDependencies // {}) |= $updated_ds[0]' "$child_package_json_path" >"$child_package_json_tmp_path"
+    jq --slurpfile updated_deps "$updated_deps_path" \
+      '(.devDependencies // {}) |= $updated_deps[0]' "$child_package_json_path" >"$child_package_json_tmp_path"
 
     mv "$child_package_json_tmp_path" "$child_package_json_path"
-    rm "$updated_ds_path"
+    rm "$updated_deps_path"
   fi
 
   child_dir="./packages/node_modules/$pkg"
@@ -213,7 +172,7 @@ for pkg in $names; do
 
   #git status -s
 
-  echo "$pkg: updating lockfile and building"
+  echo "$pkg: updating lockfile and building" 1>&2
   touch yarn.lock package-lock.json
   rm yarn.lock package-lock.json
   if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
@@ -229,7 +188,7 @@ for pkg in $names; do
 #  "$ALLENE_PACMAN_CLI" run --silent build || error_exit \
 #    "Error: '$ALLENE_PACMAN_CLI run --silent build' failed for $pkg. Remove '--silent' to debug."
 
-  echo "$pkg: testing"
+  echo "$pkg: testing" 1>&2
   "$ALLENE_PACMAN_CLI" run --silent test || error_exit \
     "Error: '$ALLENE_PACMAN_CLI run --silent test' failed for $pkg. Remove '--silent' to debug."
 
@@ -238,8 +197,8 @@ done
 
 if ! "$ALLENE_PACMAN_CLI" audit; then
   if [ "$ALLENE_PACMAN_CLI" == "npm" ]; then
-    echo 'You can try to force the fixes, but be ready to address breaking changes:'
-    echo "  $ALLENE_PACMAN_CLI audit fix --force"
+    echo 'You can try to force the fixes, but be ready to address breaking changes:' 1>&2
+    echo "  $ALLENE_PACMAN_CLI audit fix --force" 1>&2
   fi
 fi
-"$ALLENE_PACMAN_CLI" outdated || echo "TODO: update dependencies manually."
+"$ALLENE_PACMAN_CLI" outdated || echo "TODO: update dependencies manually." 1>&2

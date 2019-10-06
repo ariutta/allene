@@ -58,9 +58,10 @@ fi
 ALLE_PKG_JSON_PATH="./package.json"
 BIN_DIR="$START_DIR/packages/node_modules/.bin"
 
-if [ ! -e "$ALLE_PKG_JSON_PATH" ]; then
-  error_exit "Missing alle top-level package.json"
-fi
+# shellcheck source=utils.sh
+. "$SCRIPT_DIR"/utils.sh || error_exit "Failed to source utils.sh"
+[ -z "$ALLENE_PACMAN_CLI" ] && error_exit "ALLENE_PACMAN_CLI not set"
+[ ! -e "$ALLE_PKG_JSON_PATH" ] && error_exit "Missing alle top-level package.json"
 
 mkdir -p "$BIN_DIR"
 
@@ -130,10 +131,8 @@ if [ -e "$BIN_DIR/npm" ]; then
   #rm "$BIN_DIR/npm-cli.js"
 fi
 
-package_json_paths=$(ls -1 packages/node_modules/!(available)/**/package.json)
-
 # create symlinks for command line tools of my packages
-for pkg_f in $package_json_paths; do
+for pkg_f in $(get_pkg_json_paths); do
   pkg_dir=$(dirname "$pkg_f")
   cd "$pkg_dir" || error_exit "Failed to cd into $pkg_dir"
   if [ ! -d node_modules ]; then
