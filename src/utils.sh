@@ -189,7 +189,6 @@ detect_peer_dependencies() {
 }
 
 get_pkg_batches() {
-  echo "get_pkg_batches" 1>&2
   reqs_by_dep="$1"
   passed="$2"
   if [ -z "$passed" ]; then
@@ -220,7 +219,6 @@ get_pkg_batches() {
     unique')
   passed_length=$(echo "$passed" | jq 'length')
   if [[ "$passed_length" -lt "$reqs_by_dep_length" ]]; then
-    echo "passed: $passed" 1>&2
     get_pkg_batches "$reqs_by_dep" "$passed" "$tranches"
   else
     echo "$tranches"
