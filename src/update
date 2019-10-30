@@ -86,10 +86,21 @@ else
   npm audit fix
 fi
 
-# all packages and direct dependencies for this project
-pkgs_and_versions=$(jq '.dependencies' package.json)
+update_pkg() {
+  pkg="$1"
+  ALLENE_PACMAN_CLI="$2"
+  START_DIR="$3"
+  SCRIPT_DIR="$4"
 
-QUERY=$(
+  cd "$START_DIR" || error_exit "Error: 'cd \"$START_DIR\"' failed."
+
+  # shellcheck source=utils.sh
+  . "$SCRIPT_DIR"/utils.sh || error_exit "Failed to source utils.sh"
+
+  # all packages and direct dependencies for this project
+  pkgs_and_versions=$(jq '.dependencies' package.json)
+
+  jq_query=$(
   (sed 's/^\s*//g' | tr -d '\012') <<END
 (.[\$dep_key] // {}) |
 to_entries |
@@ -105,9 +116,6 @@ map({
 from_entries
 END
 )
-
-for pkg in $(jq -sr '.[] | .name' my-packages.json); do
-  cd "$START_DIR" || error_exit "Error: 'cd \"$START_DIR\"' failed."
 
   echo "**********************************" 1>&2
   echo "* $pkg" 1>&2
@@ -135,12 +143,12 @@ for pkg in $(jq -sr '.[] | .name' my-packages.json); do
 
   if [ "$has_dependencies" != 'true' ] && [ "$has_dev_dependencies" != 'true' ]; then
     echo "$pkg has no deps." 1>&2
-    continue
+    return
   fi
 
   if [ "$has_dependencies" == 'true' ]; then
     jq --arg dep_key 'dependencies' --argjson pkgs_and_versions "$pkgs_and_versions" \
-      "$QUERY" \
+      "$jq_query" \
       "$child_package_json_path" >"$updated_deps_path"
 
     jq --slurpfile updated_deps "$updated_deps_path" \
@@ -152,7 +160,7 @@ for pkg in $(jq -sr '.[] | .name' my-packages.json); do
 
   if [ "$has_dev_dependencies" == 'true' ]; then
     jq --arg dep_key 'devDependencies' --argjson pkgs_and_versions "$pkgs_and_versions" \
-      "$QUERY" \
+      "$jq_query" \
       "$child_package_json_path" >"$updated_deps_path"
 
     jq --slurpfile updated_deps "$updated_deps_path" \
@@ -193,6 +201,24 @@ for pkg in $(jq -sr '.[] | .name' my-packages.json); do
     "Error: '$ALLENE_PACMAN_CLI run --silent test' failed for $pkg. Remove '--silent' to debug."
 
   cd "$START_DIR" || error_exit "Error: 'cd \"$START_DIR\"' failed."
+}
+
+export -f update_pkg
+
+# We are processing packages in batches of siblings in a dependency hierarchy.
+# That means that if any package in a given batch has a dependency on one of my
+# packages, that dependency will be found in a previous batch.
+for batch in $(jq -r 'map(join("|")) | .[]' pkg_batches.json); do
+  echo "" 1>&2
+  echo "=================================================================" 1>&2
+  echo "Batch: $batch" 1>&2
+  echo "=================================================================" 1>&2
+  parallel update_pkg \
+    ::: $(echo "$batch" |  jq -Rr 'split("|") | map("\(.)\n") | .[]') \
+    ::: "$ALLENE_PACMAN_CLI" \
+    ::: "$START_DIR" \
+    ::: "$SCRIPT_DIR" ||
+	error_exit "Failed while updating one of these packages: $batch"
 done
 
 if ! "$ALLENE_PACMAN_CLI" audit; then

@@ -4,12 +4,20 @@
 get_script_dir() { echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; }
 SCRIPT_DIR=$(get_script_dir)
 START_DIR=$(pwd)
+
 on_error() {
   true
 }
 cleanup_complete=0
 cleanup() {
   cd "$START_DIR" || return
+
+  # shellcheck source=src/utils.sh
+  . "$SCRIPT_DIR"/src/utils.sh || echo "Failed to source utils.sh" 1>&2
+
+  if [ -d "$PKG_INFO_CACHE" ]; then
+    rm -rf "$PKG_INFO_CACHE"
+  fi
   cleanup_complete=1
 }
 # Based on http://linuxcommand.org/lc3_wss0140.php

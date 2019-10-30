@@ -68,9 +68,14 @@ if [ -e pkg_batches.json ]; then
   for batch in $(jq -r 'map(join("|")) | .[]' pkg_batches.json); do
     echo "$batch" | \
       jq -Rr 'split("|") | map("\(.)\n") | .[]' | \
-      xargs -n 1 -P 4 -i{} sh -c "(cd ./packages/node_modules/\"{}\" || exit 1 && eval \"$*\") || break"
+      xargs -n 1 -P 4 -i{} sh -c "(cd ./packages/node_modules/\"{}\" || exit 1 && eval \"$*\" || break 2) || exit 1"
+      #xargs -n 1 -P 4 -i{} sh -c "(cd ./packages/node_modules/\"{}\" || exit 1 && eval \"$*\" || exit 1) || break && exit 1"
+      #xargs -n 1 -P 4 -i{} sh -c "(cd ./packages/node_modules/\"{}\" || exit 1 && eval \"$*\" || exit 1) || exit 1"
+      #xargs -n 1 -P 4 -i{} sh -c "(cd ./packages/node_modules/\"{}\" || exit 1 && eval \"$*\" || exit 1) || break"
+      #xargs -n 1 -P 4 -i{} sh -c "(cd ./packages/node_modules/\"{}\" || exit 1 && eval \"$*\") || break"
   done
 else
+  echo "Missing pkg_batches.json" 1>&2
   jq -sr 'map(.name) | .[]' my-packages.json | \
     xargs -n 1 -P 4 -i{} sh -c "(cd ./packages/node_modules/\"{}\" || exit 1 && eval \"$*\") || break"
 fi

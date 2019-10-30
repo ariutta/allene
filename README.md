@@ -9,7 +9,7 @@ multiple related projects in sync. Allene is a tool that makes it easy to:
 
 ## Install
 
-1. Install dependencies: bash, sed, jq, Node.js, NPM or Yarn
+1. Install dependencies: bash, parallel, sed, jq, Node.js and NPM/Yarn
 2. `git clone https://github.com/ariutta/allene.git`
 3. `export PATH="allene:$PATH"`
 

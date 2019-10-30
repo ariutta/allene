@@ -87,7 +87,7 @@ if [ ! -e "$PEER_DEPENDENCIES_BY_DEPENDENT_F" ]; then
 
   for caret_versioned_pkg in $(jq -r '.dependencies | to_entries | map("\(.key)@\(.value)") | .[]' package.json); do
     pkg=${caret_versioned_pkg//\^/''}
-    echo "$pkg" >/dev/stderr
+    echo "$pkg" 1>&2
     get_pkg_info "$pkg" | jq 'select(.peerDependencies) | {(.name): .peerDependencies | keys}' \
       >>"$PEER_DEPENDENTS_BY_DEPENDENCY_F" || break;
   done
