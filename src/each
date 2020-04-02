@@ -69,10 +69,8 @@ if [ -e pkg_batches.json ]; then
     echo "$batch" | \
       jq -Rr 'split("|") | map("\(.)\n") | .[]' | \
       xargs -n 1 -P 4 -i{} sh -c "(cd ./packages/node_modules/\"{}\" || exit 1 && eval \"$*\" || break 2) || exit 1"
-      #xargs -n 1 -P 4 -i{} sh -c "(cd ./packages/node_modules/\"{}\" || exit 1 && eval \"$*\" || exit 1) || break && exit 1"
-      #xargs -n 1 -P 4 -i{} sh -c "(cd ./packages/node_modules/\"{}\" || exit 1 && eval \"$*\" || exit 1) || exit 1"
-      #xargs -n 1 -P 4 -i{} sh -c "(cd ./packages/node_modules/\"{}\" || exit 1 && eval \"$*\" || exit 1) || break"
-      #xargs -n 1 -P 4 -i{} sh -c "(cd ./packages/node_modules/\"{}\" || exit 1 && eval \"$*\") || break"
+      # TODO: look at using gnu parallel like this:
+      # https://github.com/ariutta/allene/blob/3ad257effa85426511504d7862f65b9241f7dd31/src/update#L216
   done
 else
   echo "Missing pkg_batches.json" 1>&2

@@ -12,6 +12,7 @@ cleanup_complete=0
 cleanup() {
   cd "$START_DIR" || return
 
+  # TODO: can I remove the sourcing of utils.sh here?
   # shellcheck source=src/utils.sh
   . "$SCRIPT_DIR"/src/utils.sh || echo "Failed to source utils.sh" 1>&2
 
