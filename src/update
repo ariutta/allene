@@ -51,7 +51,7 @@ shopt -s extglob
 
 if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
   echo "allene update"
-  echo "Update all my enabled dependencies (excluding those in 'available' dirs)."
+  echo "Update all my enabled dependencies (excluding any in ./packages/node_modules/available/**)."
   exit 0
 fi
 
@@ -208,7 +208,7 @@ export -f update_pkg
 # We are processing packages in batches of siblings in a dependency hierarchy.
 # That means that if any package in a given batch has a dependency on one of my
 # packages, that dependency will be found in a previous batch.
-for batch in $(jq -r 'map(join("|")) | .[]' pkg_batches.json); do
+for batch in $(jq -r 'map(join("|")) | .[]' "$ALLENE_CACHE"/pkg_batches.json); do
   echo "" 1>&2
   echo "=================================================================" 1>&2
   echo "Batch: $batch" 1>&2

@@ -5,6 +5,12 @@ get_script_dir() { echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; }
 SCRIPT_DIR=$(get_script_dir)
 START_DIR=$(pwd)
 
+# CUSTOM VARIABLES
+ALLENE_CACHE="$START_DIR"/.allene
+PKG_INFO_CACHE="$ALLENE_CACHE"/pkg_info_cache
+PEER_DEPENDENCIES_BY_DEPENDENT_F="$ALLENE_CACHE"/peer-dependencies-by-dependent.json
+PEER_DEPENDENTS_BY_DEPENDENCY_F="$ALLENE_CACHE"/peer-dependents-by-dependency.json
+
 on_error() {
   true
 }
@@ -95,4 +101,7 @@ if [ ! -x "$SCRIPT_DIR"/src/"$allene_cmd" ]; then
   error_exit "Invalid command: $allene_cmd"
 fi
 
-eval "ALLENE_PACMAN_CLI=\"$ALLENE_PACMAN_CLI\" \"$SCRIPT_DIR/src/\"$*"
+mkdir -p "$ALLENE_CACHE"
+mkdir -p "$PKG_INFO_CACHE"
+
+eval "ALLENE_CACHE=\"$ALLENE_CACHE\" PKG_INFO_CACHE=\"$PKG_INFO_CACHE\" ALLENE_PACMAN_CLI=\"$ALLENE_PACMAN_CLI\" PEER_DEPENDENCIES_BY_DEPENDENT_F=\"$PEER_DEPENDENCIES_BY_DEPENDENT_F\" PEER_DEPENDENTS_BY_DEPENDENCY_F=\"$PEER_DEPENDENTS_BY_DEPENDENCY_F\" \"$SCRIPT_DIR/src/\"$*"

@@ -4,12 +4,13 @@
 get_script_dir() { echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; }
 SCRIPT_DIR=$(get_script_dir)
 START_DIR=$(pwd)
-PKG_INFO_CACHE="$START_DIR"/.pkg_info_cache
-###################
-# Custom variables
-###################
-PEER_DEPENDENCIES_BY_DEPENDENT_F="$START_DIR"/peer-dependencies-by-dependent.json
-PEER_DEPENDENTS_BY_DEPENDENCY_F="$START_DIR"/peer-dependents-by-dependency.json
+
+# TODO: ../allene is always supposed to pass these variables. Can we get rid of this section?
+[ -z "$ALLENE_CACHE" ] && echo "ALLENE_CACHE not set" >/dev/stderr
+[ -z "$PKG_INFO_CACHE" ] && echo "PKG_INFO_CACHE not set" >/dev/stderr
+[ -z "$PEER_DEPENDENCIES_BY_DEPENDENT_F" ] && echo "PEER_DEPENDENCIES_BY_DEPENDENT_F not set" >/dev/stderr
+[ -z "$PEER_DEPENDENTS_BY_DEPENDENCY_F" ] && echo "PEER_DEPENDENTS_BY_DEPENDENCY_F not set" >/dev/stderr
+
 on_error() {
   if [ -e "$PEER_DEPENDENCIES_BY_DEPENDENT_F" ]; then
     rm "$PEER_DEPENDENCIES_BY_DEPENDENT_F"
@@ -63,8 +64,6 @@ shopt -s extglob
 if [ -z "$ALLENE_PACMAN_CLI" ]; then
   ALLENE_PACMAN_CLI="npm"
 fi
-
-mkdir -p "$PKG_INFO_CACHE"
 
 # from https://stackoverflow.com/a/8574392
 contains_element() {

@@ -64,8 +64,8 @@ if [[ -z "$*" ]]; then
   exit 1
 fi
 
-if [ -e pkg_batches.json ]; then
-  for batch in $(jq -r 'map(join("|")) | .[]' pkg_batches.json); do
+if [ -e "$ALLENE_CACHE"/pkg_batches.json ]; then
+  for batch in $(jq -r 'map(join("|")) | .[]' "$ALLENE_CACHE"/pkg_batches.json); do
     echo "$batch" | \
       jq -Rr 'split("|") | map("\(.)\n") | .[]' | \
       xargs -n 1 -P 4 -i{} sh -c "(cd ./packages/node_modules/\"{}\" || exit 1 && eval \"$*\" || break 2) || exit 1"
@@ -73,7 +73,7 @@ if [ -e pkg_batches.json ]; then
       # https://github.com/ariutta/allene/blob/3ad257effa85426511504d7862f65b9241f7dd31/src/update#L216
   done
 else
-  echo "Missing pkg_batches.json" 1>&2
-  jq -sr 'map(.name) | .[]' my-packages.json | \
+  echo "Missing "$ALLENE_CACHE"/pkg_batches.json" 1>&2
+  jq -sr 'map(.name) | .[]' "$ALLENE_CACHE"/mypackages.json | \
     xargs -n 1 -P 4 -i{} sh -c "(cd ./packages/node_modules/\"{}\" || exit 1 && eval \"$*\") || break"
 fi

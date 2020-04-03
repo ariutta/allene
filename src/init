@@ -4,26 +4,16 @@
 get_script_dir() { echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; }
 SCRIPT_DIR=$(get_script_dir)
 START_DIR=$(pwd)
-PKG_INFO_CACHE="$START_DIR"/.pkg_info_cache
-###################
-# Custom variables
-###################
-PEER_DEPENDENCIES_BY_DEPENDENT_F="$START_DIR"/peer-dependencies-by-dependent.json
-PEER_DEPENDENTS_BY_DEPENDENCY_F="$START_DIR"/peer-dependents-by-dependency.json
+
+# TODO: ../allene is always supposed to pass these variables. Can we get rid of this section?
+[ -z "$ALLENE_CACHE" ] && echo "ALLENE_CACHE not set" >/dev/stderr
+
 on_error() {
-  if [ -e "$PEER_DEPENDENCIES_BY_DEPENDENT_F" ]; then
-    rm "$PEER_DEPENDENCIES_BY_DEPENDENT_F"
-  fi
+  true
 }
 cleanup_complete=0
 cleanup() {
   cd "$START_DIR" || return
-  if [ -e "$PEER_DEPENDENTS_BY_DEPENDENCY_F" ]; then
-    rm "$PEER_DEPENDENTS_BY_DEPENDENCY_F"
-  fi
-  if [ -d "$PKG_INFO_CACHE" ]; then
-    rm -rf "$PKG_INFO_CACHE"
-  fi
   cleanup_complete=1
 }
 # Based on http://linuxcommand.org/lc3_wss0140.php
@@ -94,42 +84,42 @@ if [ ! -e ./package.json ]; then
 END
 fi
 
-echo "creating my-packages.json..." 1>&2
-if [ ! -e ./my-packages.json ]; then
-  echo "processing $pkg_in for my-packages.json..." 1>&2
+echo "creating "$ALLENE_CACHE"/mypackages.json..." 1>&2
+if [ ! -e "$ALLENE_CACHE"/mypackages.json ]; then
+  echo "processing $pkg_in for "$ALLENE_CACHE"/mypackages.json..." 1>&2
   repo_url=$(get_pkg_info "$pkg_in" |
     jq -r '.repository.url |
     capture("\\.com\\/(?<user>([\\w\\-]+))\\/(?<repo>([\\w\\-]+))") |
     "git@github.com:\(.user)/\(.repo).git"'
   )
-  echo "{\"name\": \"$pkg_in\", \"repository\": \"$repo_url\"}" >> ./my-packages.json
-  echo "detecting $pkg_in deps developed/maintained by $username..." 1>&2
+  echo "{\"name\": \"$pkg_in\", \"repository\": \"$repo_url\"}" >> "$ALLENE_CACHE"/mypackages.json
+  echo "detecting $pkg_in deps owned by $username (may take awhile)..." 1>&2
   for dep in $(get_my_deps "$username" "$pkg_in"); do
-    echo "processing $dep for my-packages.json..." 1>&2
+    echo "processing $dep for "$ALLENE_CACHE"/mypackages.json..." 1>&2
     repo_url=$(get_pkg_info "$dep" |
       jq -r '.repository.url |
       capture("\\.com\\/(?<user>([\\w\\-]+))\\/(?<repo>([\\w\\-]+))") |
       "git@github.com:\(.user)/\(.repo).git"'
     )
     echo "{\"name\": \"$dep\", \"repository\": \"$repo_url\"}" |
-      cat - ./my-packages.json > temp &&
-      mv temp ./my-packages.json
+      cat - "$ALLENE_CACHE"/mypackages.json > temp &&
+      mv temp "$ALLENE_CACHE"/mypackages.json
   done
 fi
 
-if [ -e ./my-packages.json ] && [ ! -d packages/node_modules ]; then
+if [ -e "$ALLENE_CACHE"/mypackages.json ] && [ ! -d packages/node_modules ]; then
   echo "making directories for my packages..." 1>&2
-  jq -sr '.[] | "mkdir -p ./packages/node_modules/\(.name)" | @sh' "./my-packages.json" | \
+  jq -sr '.[] | "mkdir -p ./packages/node_modules/\(.name)" | @sh' "$ALLENE_CACHE"/mypackages.json | \
     xargs -n 1 -P 4 -i{} sh -c "{}"
-#  jq -sr '.[] | "mkdir -p ./packages/node_modules/\(.name)"' "./my-packages.json" |
+#  jq -sr '.[] | "mkdir -p ./packages/node_modules/\(.name)"' "$ALLENE_CACHE"/mypackages.json |
 #    while read -r cmd; do
 #      $cmd
 #    done
 
   echo "cloning my packages..." 1>&2
-  jq -sr '.[] | "git clone \(.repository) ./packages/node_modules/\(.name)" | @sh' "./my-packages.json" | \
+  jq -sr '.[] | "git clone \(.repository) ./packages/node_modules/\(.name)" | @sh' "$ALLENE_CACHE"/mypackages.json | \
     xargs -n 1 -P 4 -i{} sh -c "{}"
-#  jq -sr '.[] | "git clone \(.repository) ./packages/node_modules/\(.name)"' "./my-packages.json" |
+#  jq -sr '.[] | "git clone \(.repository) ./packages/node_modules/\(.name)"' "$ALLENE_CACHE"/mypackages.json |
 #    while read -r cmd; do
 #      $cmd
 #    done
@@ -147,14 +137,14 @@ echo "linking bins..." 1>&2
 ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI" "$SCRIPT_DIR"/link-bins
 echo "building..." 1>&2
 
-if [ ! -e pkg_batches.json ]; then
+if [ ! -e "$ALLENE_CACHE"/pkg_batches.json ]; then
   echo "detecting package batches..." 1>&2
-  jq -s 'map(.name) | .[]' $(get_pkg_json_paths) >my_pkgs.json
+  jq -s 'map(.name) | .[]' $(get_pkg_json_paths) >"$ALLENE_CACHE"/my_pkgs.json
   if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
     echo "TODO: get reqs_by_dep via yarn" 1>&2
     npm install --package-lock-only
   fi
-  reqs_by_dep=$(jq --slurpfile my_pkgs my_pkgs.json \
+  reqs_by_dep=$(jq --slurpfile my_pkgs "$ALLENE_CACHE"/my_pkgs.json \
     'walk(
       if type == "object" then
         (
@@ -185,9 +175,9 @@ if [ ! -e pkg_batches.json ]; then
     rm package-lock.json
   fi
 
-  rm my_pkgs.json
+  rm "$ALLENE_CACHE"/my_pkgs.json
 
-  get_pkg_batches "$reqs_by_dep" > pkg_batches.json
+  get_pkg_batches "$reqs_by_dep" > "$ALLENE_CACHE"/pkg_batches.json
 fi
 
 echo "building packages..." 1>&2
@@ -198,7 +188,7 @@ for pkg_f in $(get_pkg_json_paths); do
   mv "$dir_path" ./tmp/"$dir_path"
 done
 
-for batch in $(jq -r 'map(join("|")) | .[]' pkg_batches.json); do
+for batch in $(jq -r 'map(join("|")) | .[]' "$ALLENE_CACHE"/pkg_batches.json); do
   echo "$batch" | \
     jq -Rr 'split("|") | map("\(.)\n") | .[]' | \
     # TODO: how should -P be set? The machine won't necessarily have 4 cores/processors
@@ -206,7 +196,7 @@ for batch in $(jq -r 'map(join("|")) | .[]' pkg_batches.json); do
 	error_exit "Failed to build"
 done
 rm -rf ./tmp
-for batch in $(jq -r 'map(join("|")) | .[]' pkg_batches.json); do
+for batch in $(jq -r 'map(join("|")) | .[]' "$ALLENE_CACHE"/pkg_batches.json); do
   echo "$batch" | \
     jq -Rr 'split("|") | map("\(.)\n") | .[]' | \
     xargs -n 1 -P 4 -i{} sh -c "echo \"rebuilding {}\" 1>&2; cd \"packages/node_modules/{}\" && \"$ALLENE_PACMAN_CLI\" run build && cd \"$START_DIR\"" ||

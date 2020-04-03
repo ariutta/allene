@@ -4,11 +4,12 @@
 get_script_dir() { echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; }
 SCRIPT_DIR=$(get_script_dir)
 START_DIR=$(pwd)
-###################
-# Custom variables
-###################
-PEER_DEPENDENCIES_BY_DEPENDENT_F="$START_DIR"/peer-dependencies-by-dependent.json
-PEER_DEPENDENTS_BY_DEPENDENCY_F="$START_DIR"/peer-dependents-by-dependency.json
+
+# TODO: ../allene is always supposed to pass these variables. Can we get rid of this section?
+[ -z "$ALLENE_CACHE" ] && echo "ALLENE_CACHE not set" >/dev/stderr
+[ -z "$PEER_DEPENDENCIES_BY_DEPENDENT_F" ] && echo "PEER_DEPENDENCIES_BY_DEPENDENT_F not set" >/dev/stderr
+[ -z "$PEER_DEPENDENTS_BY_DEPENDENCY_F" ] && echo "PEER_DEPENDENTS_BY_DEPENDENCY_F not set" >/dev/stderr
+
 on_error() {
   if [ -e "$PEER_DEPENDENCIES_BY_DEPENDENT_F" ]; then
     rm "$PEER_DEPENDENCIES_BY_DEPENDENT_F"
@@ -80,7 +81,7 @@ get_pkg_info() {
   echo "$pkg_info"
 }
 
-names=$(jq -sr '.[] | .name' my-packages.json)
+names=$(jq -sr '.[] | .name' "$ALLENE_CACHE"/mypackages.json)
 
 if [ ! -e "$PEER_DEPENDENCIES_BY_DEPENDENT_F" ]; then
   echo "Detecting peer dependencies. May be slow the first time but will be cached for future runs."
