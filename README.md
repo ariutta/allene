@@ -1,42 +1,78 @@
-# allene
+# Allene: keep interdependent JS packages in sync
 
-The [alle](https://github.com/boennemann/alle) structure allows for editing
-multiple related projects in sync. Allene is a tool that makes it easy to:
+Working on multiple related packages? Dependency tree look something like this?
 
-- set up your projects in the alle structure
-- update dependencies
+```
+******MyPackageA******
+ ^      ^         ^
+ |      |         |
+ | MyPackageB MyPackageC
+ |      ^
+ |      |
+MyPackageD
+```
+
+Allene can help. It keeps your packages in sync across your whole project:
+- always use latest versions of your packages
+- uniformly update third-party dependencies
 - find unused dependencies
+
+This is an alternative to using a monorepo with lerna and yarn workspaces. You
+get many of the same benefits, but you can continue using a separate repo for
+each package.
 
 ## Install
 
-1. Install dependencies: bash, parallel, sed, jq, Node.js and NPM/Yarn
-2. `git clone https://github.com/ariutta/allene.git`
-3. `export PATH="allene:$PATH"`
+1. Install dependencies: `bash`, `parallel`, `sed`, `jq`, `Node.js` and `NPM`/`Yarn`
+2. Get repo: `git clone https://github.com/ariutta/allene.git`
+3. Add `allene` to PATH: `export PATH="allene:$PATH"`
 
 ## Usage
 
-1. Login: `npm login` or `yarn login`
-2. Create project directory: `mkdir <your-package-name>-alle; cd <your-package-name>-alle`
-3. Create alle-inspired project structure for your package:
+1. Login: `npm login` or `yarn login` (to let Allene know which packages belong to you)
+2. In an empty directory of your choosing, initialize for your package:
    `allene init '<your-package-name>'`
-4. Update dependencies: `allene update`
-5. Find unused dependencies: `allene depcheck`
+
+    Your specified package and any of its dependencies that are also yours will be
+    organized in the [alle](https://github.com/boennemann/alle) structure:
+
+    ```
+    |--node_modules (third-party)
+    |--packages (yours)
+    |  |--MyPackageA
+    |  |  |--package.json
+    |  |  |--...
+    |  |--MyPackageB
+    |  |  |--package.json
+    |  |  |--...
+    |  |--MyPackageC
+    |  |  |--package.json
+    |  |  |--...
+    |  |--MyPackageD
+    |  |  |--package.json
+    |  |  |--...
+    |--...
+    ```
+
+    You can `cd` into your packages, edit files and git push/pull just like normal.
+
+3. Update dependencies: `allene update`
+4. Find unused dependencies: `allene depcheck`
 
 Run `allene --help` to see all available commands.
 
 If you have `yarn` installed, `allene` will use it instead of `npm`.
-You can override this by setting the `ALLENE_PACMAN_CLI` env var:
+To force usage of `npm`, set the `ALLENE_PACMAN_CLI` env var:
 `export ALLENE_PACMAN_CLI="npm"`
 
-Example: setup an alle project structure for package `@wikipathways/pvjs` as a
-member of the Pvjs team, using `npm` as package manager tool:
+### Example
+If you're on the Pvjs team, you can create a dev environment for package `@wikipathways/pvjs`:
 
 1. Login: `npm login`
-2. Create project directory: `mkdir pvjs-alle; cd pvjs-alle`
-3. Create alle-inspired project structure for package `@wikipathways/pvjs`:
+2. Create alle-inspired project structure for package `@wikipathways/pvjs`:
    `ALLENE_PACMAN_CLI="npm"; ../../allene/allene init '@wikipathways/pvjs'`
-4. Update: `ALLENE_PACMAN_CLI="npm"; ../../allene/allene update`
-5. Find unused dependencies: `../../allene/allene depcheck`
+3. Update: `ALLENE_PACMAN_CLI="npm"; ../../allene/allene update`
+4. Find unused dependencies: `../../allene/allene depcheck`
 
 ## Sync mynixpkgs
 
