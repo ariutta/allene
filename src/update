@@ -51,7 +51,7 @@ shopt -s extglob
 
 if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
   echo "allene update"
-  echo "Update all my enabled dependencies (excluding any in ./packages/node_modules/available/**)."
+  echo "Update my dependencies (except any in ./packages/node_modules/available/**)."
   exit 0
 fi
 
