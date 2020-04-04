@@ -73,6 +73,12 @@ top_level_pkgs_and_versions=$(jq \
   '.dependencies // {}' \
   $ALLE_PKG_JSON_PATH)
 
+# TODO: what is the best way to handle aliases?
+# leaving the version number on gives an error when running npm install for
+#   "qunitjs": "npm:qunit@^2.9.3"
+# this seems better:
+#   "qunit": "^2.9.3"
+#   "qunitjs": "npm:qunit"
 QUERY=$(
   (sed 's/^\s*//g' | tr -d '\012') <<END
 map(
@@ -89,7 +95,7 @@ map(reduce .[] as \$item ({key: "", semvers: []}; {
   semvers: (.semvers + [
     \$item["value"] |
     capture("(
-      (?<alias>(npm:@?[\\\\w][\\\\w\\\\-\\\\/\\\\.]*)@?)?
+      ((?<alias>(npm:@?[\\\\w][\\\\w\\\\-\\\\/\\\\.]*))@?)?
       (
         ((?<prefix>[~^]?)?(?<major>[0-9]+).(?<minor>[0-9]+).(?<patch>[0-9]+))
         |
@@ -103,9 +109,8 @@ map({
   latest_semver: (.semvers | sort_by(.url, .major, .minor, .patch) | last)
 }) |
 map({
-  (.key): (
+  (.key): (if .latest_semver.alias == null then (
     [
-      .latest_semver.alias,
       .latest_semver.prefix,
       (
         .latest_semver |
@@ -119,7 +124,9 @@ map({
     ] |
     map(select(. != null)) |
     join("")
-  )
+  ) else (
+    .latest_semver.alias
+  ) end)
 }) |
 reduce .[] as \$item ({}; \$item * .) | . as \$merged_deps |
 keys |
