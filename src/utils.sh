@@ -181,8 +181,12 @@ detect_peer_dependencies() {
       >>"$PEER_DEPENDENTS_BY_DEPENDENCY_F" || break
   done
 
-  jq -s 'reduce .[] as $item({}; . * $item) | to_entries | map(select(.value | length > 0)) | map(.key as $mykey | reduce .value[] as $myvalue ({}; . * {($myvalue): [$mykey]})) | map(to_entries) | reduce .[] as $item ([]; . + $item) | reduce .[] as $item ({}; .[$item["key"]] += $item["value"])' \
-    "$PEER_DEPENDENTS_BY_DEPENDENCY_F" >"$PEER_DEPENDENCIES_BY_DEPENDENT_F"
+  if [ -e "$PEER_DEPENDENTS_BY_DEPENDENCY_F" ]; then
+    jq -s 'reduce .[] as $item({}; . * $item) | to_entries | map(select(.value | length > 0)) | map(.key as $mykey | reduce .value[] as $myvalue ({}; . * {($myvalue): [$mykey]})) | map(to_entries) | reduce .[] as $item ([]; . + $item) | reduce .[] as $item ({}; .[$item["key"]] += $item["value"])' \
+      "$PEER_DEPENDENTS_BY_DEPENDENCY_F" >"$PEER_DEPENDENCIES_BY_DEPENDENT_F"
+  else
+      echo '{}' >"$PEER_DEPENDENCIES_BY_DEPENDENT_F"
+  fi
 
   rm "$PEER_DEPENDENTS_BY_DEPENDENCY_F"
 }
