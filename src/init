@@ -93,7 +93,7 @@ if [ ! -e "$ALLENE_CACHE"/mypackages.json ]; then
     "git@github.com:\(.user)/\(.repo).git"'
   )
   echo "{\"name\": \"$pkg_in\", \"repository\": \"$repo_url\"}" >> "$ALLENE_CACHE"/mypackages.json
-  echo "detecting $pkg_in deps owned by $username (may take awhile)..." 1>&2
+  echo "detecting $pkg_in dependencies controlled by $username (may take awhile)..." 1>&2
   for dep in $(get_my_deps "$username" "$pkg_in"); do
     echo "processing $dep for "$ALLENE_CACHE"/mypackages.json..." 1>&2
     repo_url=$(get_pkg_info "$dep" |
@@ -111,18 +111,17 @@ if [ -e "$ALLENE_CACHE"/mypackages.json ] && [ ! -d packages/node_modules ]; the
   echo "making directories for my packages..." 1>&2
   jq -sr '.[] | "mkdir -p ./packages/node_modules/\(.name)" | @sh' "$ALLENE_CACHE"/mypackages.json | \
     xargs -n 1 -P 4 -i{} sh -c "{}"
-#  jq -sr '.[] | "mkdir -p ./packages/node_modules/\(.name)"' "$ALLENE_CACHE"/mypackages.json |
-#    while read -r cmd; do
-#      $cmd
-#    done
 
   echo "cloning my packages..." 1>&2
-  jq -sr '.[] | "git clone \(.repository) ./packages/node_modules/\(.name)" | @sh' "$ALLENE_CACHE"/mypackages.json | \
-    xargs -n 1 -P 4 -i{} sh -c "{}"
-#  jq -sr '.[] | "git clone \(.repository) ./packages/node_modules/\(.name)"' "$ALLENE_CACHE"/mypackages.json |
-#    while read -r cmd; do
-#      $cmd
-#    done
+  jq -sr '.[] | "git clone \(.repository) ./packages/node_modules/\(.name)"' "$ALLENE_CACHE"/mypackages.json |
+    while read -r cmd; do
+      $cmd
+    done
+
+  # NOTE: Cloning in parallel gives the following error:
+  # ControlSocket /home/ariutta/.ssh/control:github.com:22:git already exists, disabling multiplexing
+#  jq -sr '.[] | "git clone \(.repository) ./packages/node_modules/\(.name)" | @sh' "$ALLENE_CACHE"/mypackages.json | \
+#    xargs -n 1 -P 4 -i{} sh -c "{}"
 fi
 
 echo "collecting dependencies..." 1>&2
