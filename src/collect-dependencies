@@ -74,11 +74,14 @@ top_level_pkgs_and_versions=$(jq \
   $ALLE_PKG_JSON_PATH)
 
 # TODO: what is the best way to handle aliases?
-# leaving the version number on gives an error when running npm install for
+# leaving the version number on gives an error when running 'yarn install'
+# and then 'npm install --package-lock-only' for this
 #   "qunitjs": "npm:qunit@^2.9.3"
-# this seems better:
+# this seems better but doesn't link qunitjs to qunit in node_modules:
 #   "qunit": "^2.9.3"
 #   "qunitjs": "npm:qunit"
+# Or maybe we just should just collect whatever the alias refers to but
+# ignore the alias itself. That's the what code below currently does.
 QUERY=$(
   (sed 's/^\s*//g' | tr -d '\012') <<END
 map(
@@ -89,27 +92,35 @@ map(
   (.peerDependencies // {} | to_entries) + 
   (.devDependencies // {} | to_entries)
 ) |
-flatten | group_by(.key) |
-map(reduce .[] as \$item ({key: "", semvers: []}; {
-  key: \$item["key"],
-  semvers: (.semvers + [
-    \$item["value"] |
+flatten |
+map({
+  key,
+  semver: (.value |
     capture("(
-      ((?<alias>(npm:@?[\\\\w][\\\\w\\\\-\\\\/\\\\.]*))@?)?
+      (npm:(?<alias>(@?[\\\\w][\\\\w\\\\-\\\\/\\\\.]*))@?)?
       (
         ((?<prefix>[~^]?)?(?<major>[0-9]+).(?<minor>[0-9]+).(?<patch>[0-9]+))
         |
         (?<url>((git|http).*))
       )?
     )")
-  ])
+  )
+}) |
+map({
+  key: (.semver.alias // .key),
+  semver
+}) |
+group_by(.key) |
+map(reduce .[] as \$item ({key: "", semvers: []}; {
+  key: \$item["key"],
+  semvers: (.semvers + [\$item["semver"]])
 })) |
 map({
   key,
   latest_semver: (.semvers | sort_by(.url, .major, .minor, .patch) | last)
 }) |
 map({
-  (.key): (if .latest_semver.alias == null then (
+  (.key): (
     [
       .latest_semver.prefix,
       (
@@ -124,9 +135,7 @@ map({
     ] |
     map(select(. != null)) |
     join("")
-  ) else (
-    .latest_semver.alias
-  ) end)
+  )
 }) |
 reduce .[] as \$item ({}; \$item * .) | . as \$merged_deps |
 keys |
