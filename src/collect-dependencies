@@ -62,7 +62,7 @@ shopt -s extglob
 cp "$ALLE_PKG_JSON_PATH" "$ALLE_PKG_JSON_LKG_PATH"
 
 my_pkgs_and_versions=$(jq -s \
-  'reduce .[] as $pkg_json ({}; . * ($pkg_json | {(.name): (.version)}))' \
+  'reduce .[] as $pkg_json ({}; . * ($pkg_json | {(.name): ("^" + .version)}))' \
   $(get_pkg_json_paths))
 
 echo "My packages found:" 1>&2

@@ -3,5 +3,6 @@ let
   deps = import ./mynixpkgs/environments/node.nix;
 in
   pkgs.mkShell {
-    buildInputs = deps;
+    #buildInputs = deps ++ [ pkgs.argbash ];
+    buildInputs = deps ++ [ pkgs.argbash ];
 }

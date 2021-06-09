@@ -56,7 +56,7 @@ if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
 fi
 
 ALLE_PKG_JSON_PATH="./package.json"
-BIN_DIR="$START_DIR/packages/node_modules/.bin"
+BIN_DIR="$START_DIR/packages/.bin"
 
 # shellcheck source=utils.sh
 . "$SCRIPT_DIR"/utils.sh || error_exit "Failed to source utils.sh"

@@ -101,7 +101,7 @@ fi
 always_ok_pkgs=('typescript' '@types/node' 'eslint-config-prettier' 'babel-preset-env' 'babel-preset-react')
 
 for pkg in $names; do
-  child_dir="./packages/node_modules/$pkg"
+  child_dir="./packages/$pkg"
 
   echo "**********************************"
   echo "* $pkg"
@@ -163,7 +163,7 @@ for pkg in $names; do
   done
 
   #depcheck is very slow, and it seems to be doing something wrong w/ Nix.
-  #depcheck --json --ignore-dir "./packages/node_modules/$pkg/lib" "./packages/node_modules/$pkg"
+  #depcheck --json --ignore-dir "./packages/$pkg/lib" "./packages/$pkg"
 
   cd "$START_DIR" || error_exit "Error: 'cd \"$START_DIR\"' failed."
 done

@@ -51,7 +51,7 @@ shopt -s extglob
 
 if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
   echo "allene update"
-  echo "Update my dependencies (except any in ./packages/node_modules/available/**)."
+  echo "Update my dependencies (except any in ./packages/available/**)."
   exit 0
 fi
 
@@ -83,7 +83,7 @@ if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
   echo "Notice: there is no yarn equivalent to 'npm audit fix'.
   See https://github.com/yarnpkg/yarn/issues/7075" 1>&2
 else
-  npm audit fix
+  npm audit fix || echo 'Could not fix them all'
 fi
 
 update_pkg() {
@@ -123,12 +123,12 @@ END
 
   echo "$pkg: updating package.json" 1>&2
 
-  has_dependencies=$(jq 'has("dependencies")' ./packages/node_modules/"$pkg"/package.json)
-  has_dev_dependencies=$(jq 'has("devDependencies")' ./packages/node_modules/"$pkg"/package.json)
+  has_dependencies=$(jq 'has("dependencies")' ./packages/"$pkg"/package.json)
+  has_dev_dependencies=$(jq 'has("devDependencies")' ./packages/"$pkg"/package.json)
 
-  child_package_json_path="./packages/node_modules/$pkg/package.json"
-  child_package_json_tmp_path="./packages/node_modules/$pkg/package_tmp.json"
-  updated_deps_path="./packages/node_modules/$pkg/updated_deps.json"
+  child_package_json_path="./packages/$pkg/package.json"
+  child_package_json_tmp_path="./packages/$pkg/package_tmp.json"
+  updated_deps_path="./packages/$pkg/updated_deps.json"
 
   latest_published_version=$(get_pkg_info "$pkg" | jq '.versions | last')
   package_json_version=$(jq '.version' "$child_package_json_path")
@@ -170,7 +170,7 @@ END
     rm "$updated_deps_path"
   fi
 
-  child_dir="./packages/node_modules/$pkg"
+  child_dir="./packages/$pkg"
 
   cd "$child_dir" || error_exit "Error: 'cd \"$child_dir\"' failed."
 
@@ -199,6 +199,7 @@ END
   echo "$pkg: testing" 1>&2
   "$ALLENE_PACMAN_CLI" run --silent test || error_exit \
     "Error: '$ALLENE_PACMAN_CLI run --silent test' failed for $pkg. Remove '--silent' to debug."
+  #"$ALLENE_PACMAN_CLI" run --silent test || echo "$pkg did not pass all tests"
 
   cd "$START_DIR" || error_exit "Error: 'cd \"$START_DIR\"' failed."
 }

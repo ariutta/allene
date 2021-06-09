@@ -129,7 +129,7 @@ get_pkg_info() {
 }
 
 get_pkg_json_paths() {
-  ls -1 packages/node_modules/!(available)/**/package.json 2>/dev/null ||
+  ls -1 packages/!(available)/**/package.json 2>/dev/null ||
     echo ""
 }
 

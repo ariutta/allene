@@ -64,28 +64,19 @@ fi
 [ -z "$ALLENE_PACMAN_CLI" ] && error_exit "ALLENE_PACMAN_CLI not set"
 
 pkg_in="$1"
-username=""
-if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
-  username=$(yarn login --json | jq -r '.data | capture("npm\\ username:\\ (?<username>.+)") | .username')
-else
-  username=$(npm whoami)
-fi
 
-[ -z "$username" ] && error_exit "Please log in: $ALLENE_PACMAN_CLI login"
-
-if [ ! -e ./package.json ]; then
-  cat >package.json <<END
-{
-  "name": "$pkg_in-alle",
-  "private": true,
-  "version": "0.0.0",
-  "dependencies": {}
-}
-END
-fi
-
-echo "creating "$ALLENE_CACHE"/mypackages.json..." 1>&2
 if [ ! -e "$ALLENE_CACHE"/mypackages.json ]; then
+  echo "creating "$ALLENE_CACHE"/mypackages.json..." 1>&2
+
+  username=""
+  if [ "$ALLENE_PACMAN_CLI" == "yarn" ]; then
+    username=$(yarn login --json | jq -r '.data | capture("npm\\ username:\\ (?<username>.+)") | .username')
+  else
+    username=$(npm whoami)
+  fi
+
+  [ -z "$username" ] && error_exit "Please log in: $ALLENE_PACMAN_CLI login"
+
   echo "processing $pkg_in for "$ALLENE_CACHE"/mypackages.json..." 1>&2
   repo_url=$(get_pkg_info "$pkg_in" |
     jq -r '.repository.url |
@@ -105,22 +96,28 @@ if [ ! -e "$ALLENE_CACHE"/mypackages.json ]; then
       cat - "$ALLENE_CACHE"/mypackages.json > temp &&
       mv temp "$ALLENE_CACHE"/mypackages.json
   done
+elif [ -z "$pkg_in" ]; then
+  error_exit "You must specify a pkg or create ./.allene/mypackages.json"
 fi
 
-if [ -e "$ALLENE_CACHE"/mypackages.json ] && [ ! -d packages/node_modules ]; then
+if [ ! -e ./package.json ]; then
+  jq -s 'map("./packages/" + .name) as $workspaces | {name: "monorepo-placeholder", private: true, version: "0.0.0", workspaces: $workspaces, dependencies: {}}' .allene/mypackages.json >package.json
+fi
+
+if [ -e "$ALLENE_CACHE"/mypackages.json ] && [ ! -d packages ]; then
   echo "making directories for my packages..." 1>&2
-  jq -sr '.[] | "mkdir -p ./packages/node_modules/\(.name)" | @sh' "$ALLENE_CACHE"/mypackages.json | \
+  jq -sr '.[] | "mkdir -p ./packages/\(.name)" | @sh' "$ALLENE_CACHE"/mypackages.json | \
     xargs -n 1 -P 4 -i{} sh -c "{}"
 
   echo "cloning my packages..." 1>&2
-  jq -sr '.[] | "git clone \(.repository) ./packages/node_modules/\(.name)"' "$ALLENE_CACHE"/mypackages.json |
+  jq -sr '.[] | "git clone \(.repository) ./packages/\(.name)"' "$ALLENE_CACHE"/mypackages.json |
     while read -r cmd; do
       $cmd
     done
 
   # NOTE: Cloning in parallel gives the following error:
   # ControlSocket /home/ariutta/.ssh/control:github.com:22:git already exists, disabling multiplexing
-#  jq -sr '.[] | "git clone \(.repository) ./packages/node_modules/\(.name)" | @sh' "$ALLENE_CACHE"/mypackages.json | \
+#  jq -sr '.[] | "git clone \(.repository) ./packages/\(.name)" | @sh' "$ALLENE_CACHE"/mypackages.json | \
 #    xargs -n 1 -P 4 -i{} sh -c "{}"
 fi
 
@@ -191,13 +188,13 @@ for batch in $(jq -r 'map(join("|")) | .[]' "$ALLENE_CACHE"/pkg_batches.json); d
   echo "$batch" | \
     jq -Rr 'split("|") | map("\(.)\n") | .[]' | \
     # TODO: how should -P be set? The machine won't necessarily have 4 cores/processors
-    xargs -n 1 -P 4 -i{} sh -c "echo \"building {}\" 1>&2; mv \"tmp/packages/node_modules/{}\" \"packages/node_modules/{}\" && cd \"packages/node_modules/{}\" && \"$ALLENE_PACMAN_CLI\" run build && cd \"$START_DIR\"" ||
+    xargs -n 1 -P 4 -i{} sh -c "echo \"building {}\" 1>&2; mv \"tmp/packages/{}\" \"packages/{}\" && cd \"packages/{}\" && \"$ALLENE_PACMAN_CLI\" run build && cd \"$START_DIR\"" ||
 	error_exit "Failed to build"
 done
 rm -rf ./tmp
 for batch in $(jq -r 'map(join("|")) | .[]' "$ALLENE_CACHE"/pkg_batches.json); do
   echo "$batch" | \
     jq -Rr 'split("|") | map("\(.)\n") | .[]' | \
-    xargs -n 1 -P 4 -i{} sh -c "echo \"rebuilding {}\" 1>&2; cd \"packages/node_modules/{}\" && \"$ALLENE_PACMAN_CLI\" run build && cd \"$START_DIR\"" ||
+    xargs -n 1 -P 4 -i{} sh -c "echo \"rebuilding {}\" 1>&2; cd \"packages/{}\" && \"$ALLENE_PACMAN_CLI\" run build && cd \"$START_DIR\"" ||
 	error_exit "Failed to rebuild"
 done
