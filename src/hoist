@@ -54,10 +54,18 @@ trap cleanup EXIT INT QUIT TERM
 shopt -s globstar
 shopt -s extglob
 
+if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
+  echo "allene hoist"
+  echo "Hoist dependencies up to top-level package.json,"
+  echo "  from ./packages/**/package.json to ./package.json, including every"
+  echo "  pkg name & version, dependencies, devDependencies and peerDependencies"
+  exit 0
+fi
+
 # shellcheck source=utils.sh
 . "$SCRIPT_DIR"/utils.sh || error_exit "Failed to source utils.sh"
 [ -z "$ALLENE_PACMAN_CLI" ] && error_exit "ALLENE_PACMAN_CLI not set"
-[ ! -e "$ALLE_PKG_JSON_PATH" ] && error_exit "Missing alle top-level package.json"
+[ ! -e "$ALLE_PKG_JSON_PATH" ] && error_exit "Missing top-level package.json"
 
 cp "$ALLE_PKG_JSON_PATH" "$ALLE_PKG_JSON_LKG_PATH"
 
@@ -146,7 +154,7 @@ END
 
 # Hoist dependencies from ./packages/* up to top-level package.json by
 # collecting the latest versions of each dependency along with my packages
-# and applying the results to update the top-level alle package.json.
+# and applying the results to update the top-level package.json.
 # In the capture section, we are extracting urls and semvers,
 # but we are not currently handling git references.
 jq -s --sort-keys \
