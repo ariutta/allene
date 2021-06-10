@@ -54,8 +54,12 @@ shopt -s globstar
 shopt -s extglob
 
 if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
-  echo "allene init <pkg>"
-  echo "Create an alle structure for the specified package"
+  echo "allene init [pkg]"
+  echo "Set up workspaces for <pkg> or ./.allene/mypackages.json."
+  echo "  If <pkg> specified, allene will include <pkg> and all <pkg> dependencies under your control."
+  echo "  If no <pkg> specified, you must create ./.allene/mypackages.json beforehand, formatted like this:"
+  echo '    { "name": "<pkg>", "repository": "<repo>" }'
+  echo '    { "name": "<pkg>", "repository": "<repo>" }'
   exit 0
 fi
 
