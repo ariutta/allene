@@ -59,7 +59,7 @@ fi
 . "$SCRIPT_DIR"/utils.sh || error_exit "Failed to source utils.sh"
 [ -z "$ALLENE_PACMAN_CLI" ] && error_exit "ALLENE_PACMAN_CLI not set"
 
-ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI" "$SCRIPT_DIR"/collect-dependencies
+ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI" "$SCRIPT_DIR"/hoist
 
 touch yarn.lock package-lock.json
 rm yarn.lock package-lock.json

@@ -144,9 +144,9 @@ get_deps() {
 get_my_deps() {
   username="$1"
   pkg="$2"
-  collected="$3"
-  if [[ -z "$collected" ]]; then
-    collected=("$pkg")
+  my_deps="$3"
+  if [[ -z "$my_deps" ]]; then
+    my_deps=("$pkg")
   fi
   for dep in $(get_deps "$pkg"); do
     maintainers=''
@@ -158,10 +158,10 @@ get_my_deps() {
         jq -r '.maintainers[] | capture("^(?<name>([\\w\\-]+))\\ <(?<email>(.*))>") | .name')
     fi
     if echo "$maintainers" | rg -q "^$username\$"; then
-      if ! contains_element "$dep" "${collected[@]}"; then
+      if ! contains_element "$dep" "${my_deps[@]}"; then
         echo "$dep"
-        collected+=("$dep")
-        get_my_deps "$username" "$dep" "${collected[@]}"
+        my_deps+=("$dep")
+        get_my_deps "$username" "$dep" "${my_deps[@]}"
       fi
     fi
   done

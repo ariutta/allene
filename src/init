@@ -121,8 +121,8 @@ if [ -e "$ALLENE_CACHE"/mypackages.json ] && [ ! -d packages ]; then
 #    xargs -n 1 -P 4 -i{} sh -c "{}"
 fi
 
-echo "collecting dependencies..." 1>&2
-ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI" "$SCRIPT_DIR"/collect-dependencies
+echo "hoisting dependencies..." 1>&2
+ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI" "$SCRIPT_DIR"/hoist
 
 echo "Detecting peer dependencies (background task)" 1>&2
 (detect_peer_dependencies &)

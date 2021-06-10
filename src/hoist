@@ -80,8 +80,8 @@ top_level_pkgs_and_versions=$(jq \
 # this seems better but doesn't link qunitjs to qunit in node_modules:
 #   "qunit": "^2.9.3"
 #   "qunitjs": "npm:qunit"
-# Or maybe we just should just collect whatever the alias refers to but
-# ignore the alias itself. That's the what code below currently does.
+# Or maybe we should just use whatever the alias refers to but ignore
+# the alias itself. That's the what code below currently does.
 QUERY=$(
   (sed 's/^\s*//g' | tr -d '\012') <<END
 map(
@@ -139,13 +139,14 @@ map({
 }) |
 reduce .[] as \$item ({}; \$item * .) | . as \$merged_deps |
 keys |
-reduce .[] as \$pkg_name ({}; {(\$pkg_name): \$merged_deps[\$pkg_name]} * .) | . as \$collected_deps
-| \$package_json | .dependencies |= \$collected_deps
+reduce .[] as \$pkg_name ({}; {(\$pkg_name): \$merged_deps[\$pkg_name]} * .) | . as \$hoisted_deps
+| \$package_json | .dependencies |= \$hoisted_deps
 END
 )
 
-# Collect the latest versions of each dependency along with my packages
-# and apply the results to update the top-level alle package.json.
+# Hoist dependencies from ./packages/* up to top-level package.json by
+# collecting the latest versions of each dependency along with my packages
+# and applying the results to update the top-level alle package.json.
 # In the capture section, we are extracting urls and semvers,
 # but we are not currently handling git references.
 jq -s --sort-keys \
