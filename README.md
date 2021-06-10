@@ -35,7 +35,7 @@ each package.
    `allene init '<your-package-name>'`
 
    Your specified package and any of its dependencies that are also yours will be
-   organized in the [alle](https://github.com/boennemann/alle) structure:
+   organized like this:
 
    ```
    |--node_modules (third-party)
@@ -71,7 +71,7 @@ To force usage of `npm`, set the `ALLENE_PACMAN_CLI` env var:
 If you're on the Pvjs team, you can create a dev environment for package `@wikipathways/pvjs`:
 
 1. Login: `npm login`
-2. Create alle-inspired project structure for package `@wikipathways/pvjs`:
+2. Create workspaces structure for package `@wikipathways/pvjs`:
    `ALLENE_PACMAN_CLI="npm"; ../../allene/allene init '@wikipathways/pvjs'`
 3. Update: `ALLENE_PACMAN_CLI="npm"; ../../allene/allene update`
 4. Find unused dependencies: `../../allene/allene depcheck`
@@ -84,7 +84,7 @@ handle the case where all deps are namespaced or all are not
 
 ### tsc --rootDirs
 
-Do we want to specify `rootDirs` for the top-level alle package.json?
+Do we want to specify `rootDirs` for the top-level package.json?
 
 ### npm package version formats
 

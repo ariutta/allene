@@ -61,7 +61,7 @@ BIN_DIR="$START_DIR/packages/.bin"
 # shellcheck source=utils.sh
 . "$SCRIPT_DIR"/utils.sh || error_exit "Failed to source utils.sh"
 [ -z "$ALLENE_PACMAN_CLI" ] && error_exit "ALLENE_PACMAN_CLI not set"
-[ ! -e "$ALLE_PKG_JSON_PATH" ] && error_exit "Missing alle top-level package.json"
+[ ! -e "$ALLE_PKG_JSON_PATH" ] && error_exit "Missing top-level package.json"
 
 mkdir -p "$BIN_DIR"
 

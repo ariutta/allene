@@ -87,7 +87,8 @@ if [ -z "$ALLENE_PACMAN_CLI" ]; then
   ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI"
   #export ALLENE_PACMAN_CLI="$ALLENE_PACMAN_CLI"
 fi
-echo "allene is using $ALLENE_PACMAN_CLI"
+echo "allene is using $ALLENE_PACMAN_CLI" >&2
+echo "" >&2
 
 allene_cmd="$1"
 
