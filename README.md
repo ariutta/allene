@@ -13,6 +13,7 @@ MyPackageD
 ```
 
 Allene can help. It keeps your packages in sync across your whole project:
+
 - always use latest versions of your packages
 - uniformly update third-party dependencies
 - find unused dependencies
@@ -33,28 +34,28 @@ each package.
 2. In an empty directory of your choosing, initialize for your package:
    `allene init '<your-package-name>'`
 
-    Your specified package and any of its dependencies that are also yours will be
-    organized in the [alle](https://github.com/boennemann/alle) structure:
+   Your specified package and any of its dependencies that are also yours will be
+   organized in the [alle](https://github.com/boennemann/alle) structure:
 
-    ```
-    |--node_modules (third-party)
-    |--packages (yours)
-    |  |--MyPackageA
-    |  |  |--package.json
-    |  |  |--...
-    |  |--MyPackageB
-    |  |  |--package.json
-    |  |  |--...
-    |  |--MyPackageC
-    |  |  |--package.json
-    |  |  |--...
-    |  |--MyPackageD
-    |  |  |--package.json
-    |  |  |--...
-    |--...
-    ```
+   ```
+   |--node_modules (third-party)
+   |--packages (yours)
+   |  |--MyPackageA
+   |  |  |--package.json
+   |  |  |--...
+   |  |--MyPackageB
+   |  |  |--package.json
+   |  |  |--...
+   |  |--MyPackageC
+   |  |  |--package.json
+   |  |  |--...
+   |  |--MyPackageD
+   |  |  |--package.json
+   |  |  |--...
+   |--...
+   ```
 
-    You can `cd` into your packages, edit files and git push/pull just like normal.
+   You can `cd` into your packages, edit files and git push/pull just like normal.
 
 3. Update dependencies: `allene update`
 4. Find unused dependencies: `allene depcheck`
@@ -66,6 +67,7 @@ To force usage of `npm`, set the `ALLENE_PACMAN_CLI` env var:
 `export ALLENE_PACMAN_CLI="npm"`
 
 ### Example
+
 If you're on the Pvjs team, you can create a dev environment for package `@wikipathways/pvjs`:
 
 1. Login: `npm login`
@@ -73,15 +75,6 @@ If you're on the Pvjs team, you can create a dev environment for package `@wikip
    `ALLENE_PACMAN_CLI="npm"; ../../allene/allene init '@wikipathways/pvjs'`
 3. Update: `ALLENE_PACMAN_CLI="npm"; ../../allene/allene update`
 4. Find unused dependencies: `../../allene/allene depcheck`
-
-## Sync mynixpkgs
-
-You probably don't need to worry about this. But if for some reason you want to sync the `mynixpkgs` subtree repo:
-
-```
-git subtree pull --prefix mynixpkgs mynixpkgs master --squash
-git subtree push --prefix mynixpkgs mynixpkgs master
-```
 
 ## TODO
 
